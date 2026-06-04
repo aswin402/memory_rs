@@ -49,3 +49,12 @@ AI agents often use the wrong LLMs or tools for specific tasks. `openmemory_rs` 
 * **Success/Failure Stats**: Counts runs for each tool/model combination.
 * **Latency Logs**: Tracks average execution latencies.
 * **Smart Routing**: Allows AI agents to query `query_tool_performance` to automatically select the most successful or fastest tool for their active task.
+
+---
+
+## 6. Future Cognitive Roadmap
+To make `openmemory_rs` the ultimate memory framework, the following features are planned:
+1. **Memory Auto-compaction (Garbage Collection)**: Automatically run a background compaction cycle that summarizes and archives facts with a decay score under `0.1`.
+2. **AST Impact Analysis**: Query function call graphs recursively to answer: *"If I refactor function X, which calling functions will be impacted?"*
+3. **Persona-scoped Context Filtering**: Filter retrieved graph facts and observations based on active agent roles (e.g., Coding agent gets signature-focused vectors, Planning agent gets task-focused graphs).
+4. **Online Vector Fallbacks**: Allow switching from local ONNX to API-based embedding providers (e.g., OpenAI, Cohere, Jina) via environment configs for low-compute clients.
