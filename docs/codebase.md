@@ -98,9 +98,14 @@ cargo build --release
 The compiled output is located at:
 `target/release/openmemory_rs`
 
+Install the binary to user space:
+```bash
+cp target/release/openmemory_rs ~/.local/bin/openmemory_rs
+```
+
 ### Start the server locally:
 ```bash
-cargo run --release
+~/.local/bin/openmemory_rs
 ```
 To run the server in background debug mode with detailed logs, set:
 `RUST_LOG=info cargo run --release`

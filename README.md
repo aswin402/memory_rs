@@ -79,6 +79,12 @@ cargo build --release
 The compiled native executable will be written to:
 `target/release/openmemory_rs`
 
+Install it to your local user binary directory for stable execution:
+```bash
+mkdir -p ~/.local/bin
+cp target/release/openmemory_rs ~/.local/bin/openmemory_rs
+```
+
 ### 2. Configure with your MCP Client (e.g. Claude Desktop)
 Add the configuration into your client's config file (e.g., `~/.config/Claude/claude_desktop_config.json`):
 
@@ -86,7 +92,7 @@ Add the configuration into your client's config file (e.g., `~/.config/Claude/cl
 {
   "mcpServers": {
     "openmemory": {
-      "command": "/home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/target/release/openmemory_rs",
+      "command": "/home/aswin/.local/bin/openmemory_rs",
       "env": {
         "MEMORY_DB_PATH": "/home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/memory.db"
       }
