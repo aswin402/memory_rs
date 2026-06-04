@@ -1230,28 +1230,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
-name = "memory_rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "env_logger",
- "fastembed",
- "log",
- "ndarray 0.15.6",
- "parking_lot",
- "petgraph",
- "rmcp",
- "rusqlite",
- "schemars",
- "serde",
- "serde_json",
- "tokio",
- "tree-sitter",
- "uuid",
-]
-
-[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1403,6 +1381,28 @@ checksum = "1e68317604e77e53b85896388e1a803c1d21b74c899ec9e5e1112db90735edd7"
 dependencies = [
  "cc",
  "pkg-config",
+]
+
+[[package]]
+name = "openmemory_rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "env_logger",
+ "fastembed",
+ "log",
+ "ndarray 0.15.6",
+ "parking_lot",
+ "petgraph",
+ "rmcp",
+ "rusqlite",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tree-sitter",
+ "uuid",
 ]
 
 [[package]]

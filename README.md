@@ -1,95 +1,92 @@
-# memory_rs
+# openmemory_rs
 
 <p align="center">
-  <img src="assets/logo.png" alt="memory_rs Logo" width="320"/>
+  <img src="assets/logo.png" alt="openmemory_rs Logo" width="320"/>
 </p>
 
-`memory_rs` is a high-performance, cognitive-inspired Model Context Protocol (MCP) memory server written in Rust. Designed to replace simple graph-based memory layers, it integrates a **5-tier cognitive memory architecture** alongside vector search, recency decay, and episodic logs, powered locally by SQLite and ONNX Runtime.
+`openmemory_rs` is a high-performance, unified cognitive memory engine for AI agent frameworks like **OpenZ**, implemented natively in Rust. It combines structured knowledge graphs, local vector embeddings, AST codebase analysis, episodic task reflections, and synchronized team workspaces into a single, high-performance local server.
 
 ---
 
 ## 📖 Documentation Index
-For in-depth guides on systems design and deployment details, view the documents in the `docs/` folder:
-* 🖥️ **Interactive Diagram**: [docs/architecture.html](docs/architecture.html) (Standalone SVG/CSS Card)
-* 🧠 **System Architecture**: [docs/architecture.md](docs/architecture.md) (Memory Layers & SQLite Tables)
-* ⚡ **Engine Features**: [docs/features.md](docs/features.md) (Ranking Equations & Local Embedding Specs)
-* 📁 **Codebase Structure**: [docs/codebase.md](docs/codebase.md) (Source Code Modules & Build Guide)
+For deep-dive specification sheets and code module mappings, view the documents in the `docs/` folder:
+* 🖥️ **Interactive Diagram**: [docs/architecture.html](docs/architecture.html) (Interactive standalone SVG/CSS card)
+* 🧠 **System Architecture**: [docs/architecture.md](docs/architecture.md) (6 Cognitive Layers & 9 SQLite tables spec)
+* ⚡ **Engine Features**: [docs/features.md](docs/features.md) (Ranking equations, decay formulas, codebase analysis details)
+* 📁 **Codebase Structure**: [docs/codebase.md](docs/codebase.md) (Source code modules, dependencies, compile guide)
 
 ---
 
-## ⚡ Core Upgrades over standard Memory Server
+## 🚀 Key Features
 
-1. **5 Cognitive Memory Layers**: Combines session RAM (Working Memory), structured relations (Graph Memory), local vector embeddings (Semantic Memory), task log traces (Episodic Memory), and codebase signatures (Codebase Memory) in a single workflow.
-2. **Local Vector Search**: Embedded text search powered by ONNX Runtime (`all-MiniLM-L6-v2`) running locally on CPU. No cloud service calls, no token bills, and zero external network latencies.
-3. **Temporal Recency Decay**: Implements mathematical decay ($e^{-\lambda t}$) ensuring that old, stale facts fade away in score unless marked with high importance.
-4. **Normalized SQLite Persistence**: Eliminates reading/writing flat JSON files on disk. Employs transaction-safe, row-indexed SQL databases (`memory.db`).
-5. **Ultra-Low Resource Usage**: Compiles to a single static native binary using <10MB of RAM idle, with instant startup.
-
----
-
-## ⚖️ Comparison: reference TS Memory vs. `memory_rs`
-
-`memory_rs` is inspired by the official Model Context Protocol TypeScript memory server (available at [github.com/modelcontextprotocol/servers/memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory)), but expands it with advanced capabilities:
-
-| Feature / Metric | Reference TypeScript MCP Server | `memory_rs` (Rust Engine) |
-| :--- | :--- | :--- |
-| **Language** | TypeScript / Node.js | Pure Rust |
-| **Storage Backend** | Flat JSON file (reads/writes full file) | SQLite database (`memory.db`) |
-| **Execution Performance** | High overhead from Node.js and full-file parsing | High-performance, compile-optimized native binary |
-| **Memory Footprint** | ~50MB - 100MB RAM | <10MB RAM (idle, sans models) |
-| **Startup Time** | Slow (Node.js engine loading dependencies) | Sub-millisecond instant load |
-| **Concurrency Safeguard** | No built-in locking (prone to corruption on write overlap) | Safe `parking_lot::Mutex` thread locks |
-| **Search Models** | Simple regex/exact keyword matching | Vector Similarity + Decay + Importance + Success Rank |
-| **Embeddings Support** | ❌ None (No semantic context mapping) | ✅ Local ONNX Runtime (`all-MiniLM-L6-v2`) |
-| **Decay & Recency** | ❌ None (All memories retain constant priority) | ✅ Exponential Temporal Decay ($e^{-0.01t}$) |
-| **Memory Layers** | Single Layer: Graph Memory | 5 Cognitive Layers: Working, Graph, Semantic, Episodic, Codebase |
-| **Reflections / Performance** | ❌ None (No logging of execution feedback) | ✅ Episodic task execution logs & reflections |
-| **Code Workspace Index** | ❌ None (Unaware of project symbols) | ✅ Indexes class/struct signatures & dependencies |
+* **6 Cognitive Memory Layers**: Integrated session RAM (Working Memory), relations (Graph Memory), local vectors (Semantic Memory), task execution feedback loops (Episodic Memory), static codebase trees (Codebase Memory), and shared agent workspaces (Shared Memory).
+* **AST Codebase & Dependency Graphs**: Static AST symbol parsing for Rust, Python, Go, and JS/TS. Evaluates structs, functions, parent scopes, and caller hierarchies locally.
+* **Episodic Learning & Reflection**: Tracks task status (Success/Failure), attempt traces, error root-causes, and reflections to guide future attempts.
+* **Tool & Model Performance Metrics**: Monitors tool/model usage counts, latencies, and success ratios to help agents choose optimal models dynamically.
+* **Multi-Agent Shared workspace**: Syncs variables and shared facts across multiple parallel subagent instances.
+* **Temporal Recency Decay**: Implements mathematical decay ($e^{-\lambda t}$) prioritizing fresh or manually marked important context.
+* **100% Offline Vector Search**: Runs embeddings locally on CPU using ONNX Runtime (`all-MiniLM-L6-v2`) with zero external API calls.
+* **Local Persistence**: Saves all structural layers in a unified transaction-safe SQLite database (`memory.db`).
 
 ---
 
-## 🛠️ Architecture Overview
+## ⚖️ Comparative Overview
 
-The system is coordinated via a centralized controller which maps incoming JSON-RPC calls over Stdio streams to respective SQLite tables, executing similarity ranking algorithms to find relevant context.
+`openmemory_rs` merges features from three reference architectures into a single, high-performance native engine:
+
+| Attribute | Memory MCP (TypeScript Reference) | Supermemory MCP | Codebase-Memory MCP | `openmemory_rs` (Rust Engine) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Language** | TypeScript / Node.js | TypeScript / Deno | Go / C | **Pure Rust** |
+| **Persistence** | Flat JSON (Full file parse) | Remote cloud vector store | Local SQLite | **Local SQLite (`memory.db`)** |
+| **AST Parse** | ❌ None | ❌ None | ✅ Tree-sitter | **✅ Native Codebase Parser** |
+| **Vectors/Embed** | ❌ None | ✅ Cloud Embeddings | ❌ None | **✅ Local ONNX (`all-MiniLM-L6`)** |
+| **Episodic Reflection**| ❌ None | ❌ None | ❌ None | **✅ Log attempts, root-causes** |
+| **Team Share** | ❌ None | ❌ None | ❌ None | **✅ Cross-agent team boards** |
+| **Tool Performance** | ❌ None | ❌ None | ❌ None | **✅ Tracks model & tool latencies** |
+| **Startup / RAM** | Slow / ~80MB RAM | Slow / Cloud dependent | Fast / ~30MB RAM | **Sub-ms / <10MB RAM** |
+
+---
+
+## 🛠️ System Architecture
+
+The core coordinator routes incoming JSON-RPC calls over Stdio streams to the corresponding memory layer, updating SQLite tables and calculating vector cosine similarity scores on demand.
 
 ```mermaid
 graph TD
-    Client[AI Agent / MCP Client] <-->|Stdio JSON-RPC| Server[rmcp Stdio Server]
+    Client[AI Agent / OpenZ client] <-->|Stdio JSON-RPC| Server[openmemory Server]
     Server <--> Coordinator[Memory Coordinator]
     
-    Coordinator --> L1[Working Memory: RwLock HashMap]
-    Coordinator --> L2[Graph Memory: SQLite Tables]
-    Coordinator --> L3[Semantic Memory: SQLite Vector blobs]
-    Coordinator --> L4[Episodic Memory: SQLite Log traces]
-    Coordinator --> L5[Codebase Memory: SQLite Signatures]
+    Coordinator --> L1[Working: RAM Cache]
+    Coordinator --> L2[Graph: SQLite Nodes/Edges]
+    Coordinator --> L3[Semantic: SQLite Vectors]
+    Coordinator --> L4[Episodic: Reflection & Tools]
+    Coordinator --> L5[Codebase: AST & Evolution]
+    Coordinator --> L6[Shared: Cross-Agent Team Workspace]
     
-    L3 <--> LocalEmbedding[Local Embedding Engine: fastembed]
-    L4 --> Ranker[Ranker scoring: Recency Decay + Cos Similarity]
+    L3 <--> LocalEmbedding[Local Embeddings: fastembed]
+    L4 --> Ranker[Scoring: Similarity + Decay + Importance + Success]
 ```
 
 ---
 
 ## ⚙️ Quickstart
 
-### Prerequisites
-* Rust compiler & Cargo toolchain.
-
-### 1. Build the engine
-Compile the release binary:
+### 1. Compile the Release Crate
+Ensure you have the Rust compiler and Cargo toolchain installed:
 ```bash
 cargo build --release
 ```
-The compiled executable will be located at:
-`target/release/memory_rs`
+The compiled native executable will be written to:
+`target/release/openmemory_rs`
 
 ### 2. Configure with your MCP Client (e.g. Claude Desktop)
-Add the server configuration inside your client configuration file (e.g., `~/.config/Claude/claude_desktop_config.json`):
+Add the configuration into your client's config file (e.g., `~/.config/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "memory": {
-      "command": "/home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/target/release/memory_rs",
+    "openmemory": {
+      "command": "/home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/target/release/openmemory_rs",
       "env": {
         "MEMORY_DB_PATH": "/home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/memory.db"
       }
@@ -98,15 +95,34 @@ Add the server configuration inside your client configuration file (e.g., `~/.co
 }
 ```
 
-### 3. Integrated Tools
+---
 
-The server implements all 9 graph-based operations required by standard MCP integrations:
-* `create_entities`: Declare new entities with types and observations.
-* `create_relations`: Create directed active-voice relations between nodes.
-* `add_observations`: Add observations to existing entities.
-* `delete_entities`: Safely remove nodes and all associated relations.
-* `delete_observations`: Clear specific observations from entities.
-* `delete_relations`: Delete relations.
-* `read_graph`: Dump the entire relational knowledge graph.
-* `search_nodes`: Search entities matching a keyword pattern.
-* `open_nodes`: Directly read observations of entities by name.
+## 🔌 Exposed MCP Tools
+
+`openmemory_rs` registers 19 comprehensive tools categorized by cognitive layers:
+
+### 1. Knowledge Graph Tools
+* `create_entities`: Create nodes with entity types and observations.
+* `create_relations`: Link entities with active-voice connections.
+* `add_observations`: Append observations to existing nodes.
+* `delete_entities` / `delete_observations` / `delete_relations`: Delete nodes/edges.
+* `read_graph`: Retrieve the full entity-relationship graph.
+* `search_nodes`: Filter nodes matching keyword pattern matching.
+* `open_nodes`: Retrieve observation records of nodes by name.
+
+### 2. Code Intelligence Tools
+* `index_codebase`: Index files under a path into codebase AST elements and calls.
+* `query_code_graph`: Find indexed functions, structs, parent blocks, and signatures.
+* `log_repository_evolution`: Track file changes, commits, versions, and bug status metrics.
+* `query_repository_evolution`: Retrieve codebase revision summaries.
+
+### 3. Episodic Learning & Performance Tools
+* `log_execution_episode`: Record runtime step-by-step logs, status, and summaries.
+* `log_reflection`: Store attempts, failures, root causes, and solution logs.
+* `retrieve_episodic_reflections`: Query historical reflecting cards to guide current runs.
+* `record_tool_performance`: Track success counts and latencies for LLMs/tools.
+* `query_tool_performance`: Recommend models or tools based on metrics history.
+
+### 4. Shared Team Memory Tools
+* `store_shared_team_memory`: Store key-value data shared across target agent IDs.
+* `retrieve_shared_team_memory`: Retrieve target messages/contexts for specific agent IDs.

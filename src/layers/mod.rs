@@ -3,3 +3,4 @@ pub mod episodic;
 pub mod semantic;
 pub mod graph;
 pub mod codebase;
+pub mod shared;

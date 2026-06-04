@@ -1,65 +1,51 @@
 # Engine Features
 
-The `memory_rs` server is packed with modern architectural and performance upgrades over standard memory servers. Below is an in-depth breakdown of these features.
+`openmemory_rs` is a complete, unified cognitive engine for AI agents. It implements advanced context storage, AST code structure mapping, mathematical recency decay, and episodic learning loops.
 
 ---
 
-## 1. High Performance & Low Overhead (Rust Native)
-* **Compile-Time Safety**: Written in pure Rust with strict ownership constraints, guaranteeing memory safety without a garbage collector.
-* **Fast Startup**: Sub-millisecond startup times compared to Node.js virtual machines.
-* **Minimal Resource Footprint**: Extremely low RAM usage (less than 10MB idle, excluding loaded model vectors), making it highly suitable for running locally in background environments.
-* **Connection Pooling**: Utilizes SQLite's local performance and simple locking mechanisms, ensuring that concurrency is managed cleanly by `parking_lot::Mutex` thread locks.
+## 1. Modular Memory Layers (Multi-Tier Storage)
+* **Working Layer**: RwLock RAM cache for transient variables, context loops, and subsecond execution steps.
+* **Graph Layer**: Directed entity-relationship graph with observative JSON arrays, conforming with the standard Model Context Protocol.
+* **Semantic Layer**: Purely local high-dimensional vector search utilizing cosine similarity matches.
+* **Episodic Layer**: Persists step-by-step task logs and reflections (what failed/worked and why), allowing the agent to check its history before trying a workflow again.
+* **Code & AST Layer**: Indexes files, declarations, enums, functions, and structs. Tracks caller-callee relations and codebase refactor statistics.
+* **Shared Layer**: Dynamically syncs key-value entries across multiple subagents running in parallel.
 
 ---
 
-## 2. Dynamic Memory Ranking and Decay
-The memory engine uses a multi-factor ranking model in [src/search/ranker.rs](../src/search/ranker.rs) to rank search results. Rather than just returning items matching keywords, it implements cognitive models that evaluate:
-
-1. **Semantic Relevance**: How similar is the query to the memory's content using cosine similarity?
-2. **Temporal Recency**: How long ago was the memory captured? Old memories decay unless they are highly important.
-3. **Importance Multiplier**: A manual multiplier assigned to critical facts (e.g. user name, API endpoints).
-4. **Historical Success Rate**: Prioritizes reflections from successful agent loops while deprioritizing strategies that failed.
+## 2. Multi-Factor Context Ranking & Decay
+Standard retrieval engines only scan keyword similarities. `openmemory_rs` calculates a composite relevance score for semantic context lookups, dynamically prioritizing recent or highly important facts while letting stale, minor information decay over time.
 
 ### The Scoring Equation
 $$Score = (\alpha \cdot Similarity) + (\beta \cdot Recency) + (\gamma \cdot Importance) + (\delta \cdot SuccessRate)$$
 
 Where:
-* **Similarity**: Cosine similarity value $[0.0, 1.0]$.
-* **Recency**: Calculated using exponential decay: $Recency = e^{-\lambda \cdot t}$, where $t$ is the elapsed hours, and $\lambda = 0.01$ (decay factor).
-* **Importance**: User-defined fact importance score $[1.0, 5.0]$.
-* **SuccessRate**: Ratio of successful tasks associated with this memory $[0.0, 1.0]$.
+* **Similarity**: Cosine vector distance score between query and fact embeddings $[0.0, 1.0]$.
+* **Recency**: Calculated using exponential time-based decay: $Recency = e^{-\lambda \cdot t}$, where $t$ is the elapsed hours since creation, and $\lambda = 0.01$ (decay coefficient).
+* **Importance**: Manual weighting factor assigned to critical configs/rules $[1.0, 5.0]$.
+* **SuccessRate**: Historical success rate of the agent tasks associated with this memory $[0.0, 1.0]$, prioritizing strategies that succeeded and deprioritizing those that failed.
 
 ---
 
-## 3. Pure-Rust Vector Search (Local Embeddings)
-* **Zero Cloud Dependencies**: The server does not send texts or queries to external services like OpenAI. All embedding generation is done locally on your CPU using ONNX Runtime.
-* **FastEmbed Crate Integration**: Uses `fastembed` for fast model inference.
-* **Model Configuration**:
-  * Default Model: `all-MiniLM-L6-v2` (384-dimensional dense vectors).
-  * Backend: ONNX Runtime (using pure Rust-tls bindings `hf-hub-rustls-tls` to avoid system OpenSSL dependencies).
-* **SQLite Embedding Storage**: Embedded vectors are saved directly inside SQLite as binary blobs, avoiding the complexity of a separate vector database.
+## 3. Pure-Rust Vector Search
+* **100% Local**: No external API dependencies. All embedding generation runs locally on your CPU via ONNX Runtime.
+* **FastEmbed**: Driven by the `fastembed` crate utilizing `all-MiniLM-L6-v2` (producing 384-dimensional dense vectors).
+* **No OpenSSL Dependency**: Locked to rustls/TLS packages (`hf-hub-rustls-tls`) to ensure trouble-free static builds on Linux, macOS, and Windows.
 
 ---
 
-## 4. Normalized SQLite Architecture
-The TypeScript reference memory server stores data in a flat JSON file on disk, which requires reading, writing, and parsing the entire graph for every single tool call. `memory_rs` moves away from this slow design by using a normalized SQLite structure:
-* **Incremental Writes**: Only changed rows, nodes, or edges are written to disk.
-* **Transaction Safety**: All modifications use SQLite's transactional guarantees, preventing data corruption during sudden shutdowns.
-* **Native Indexes**: Fast lookups on entity names, edge endpoints, and signature IDs.
+## 4. AST Code Parsing & Call Graphs
+`openmemory_rs` replaces generic codebase grepping with a local structural code analyzer.
+* **Symbol Extraction**: Extracts definitions, Structs, Functions, Classes, Impls, and Enums from `.rs`, `.py`, `.js`, `.ts`, and `.go` source files.
+* **Call Mapping**: Correlates element declarations to construct call hierarchy trees.
+* **Impact Analysis**: Allows agents to evaluate what files or methods are affected if a specific struct or function signature is changed.
+* **Repository Evolution**: Logs commit summaries, authors, versions, and tags files containing bugs to pinpoint error-prone components in the repo.
 
 ---
 
-## 5. Complete Model Context Protocol (MCP) Compliance
-The server fully implements the standard Model Context Protocol Stdio transport. It registers 9 compatible tools that allow any MCP client (like Claude Desktop, Cursor, or OpenZ) to interact with it out-of-the-box:
-
-| Tool Name | Parameters | Description |
-| :--- | :--- | :--- |
-| `create_entities` | `entities: Vec<Entity>` | Create multiple new entities in the graph. |
-| `create_relations` | `relations: Vec<Relation>` | Create multiple directed relations between entities. |
-| `add_observations` | `observations: Vec<Observation>` | Append observation texts to existing entities. |
-| `delete_entities` | `entityNames: Vec<String>` | Delete multiple entities and all associated relations. |
-| `delete_observations` | `deletions: Vec<ObservationDeletion>` | Delete specific observation lines from an entity. |
-| `delete_relations` | `relations: Vec<Relation>` | Remove specific directed relations from the graph. |
-| `read_graph` | None (Empty) | Retrieve the entire active entity-relationship knowledge graph. |
-| `search_nodes` | `query: String` | Find entities and relations matching a query pattern. |
-| `open_nodes` | `names: Vec<String>` | Retreive the full observation records of specific nodes by name. |
+## 5. Tool & Model Performance Tracker
+AI agents often use the wrong LLMs or tools for specific tasks. `openmemory_rs` tracks tool performances globally to optimize routing decisions.
+* **Success/Failure Stats**: Counts runs for each tool/model combination.
+* **Latency Logs**: Tracks average execution latencies.
+* **Smart Routing**: Allows AI agents to query `query_tool_performance` to automatically select the most successful or fastest tool for their active task.

@@ -1,77 +1,74 @@
 # System Architecture
 
-The `memory_rs` server implements a multi-tiered, cognitive-inspired memory architecture specifically designed to empower AI agents like **OpenZ**. Rather than relying on a flat, simple knowledge graph, `memory_rs` structures memory into **5 cognitive layers**, providing a comprehensive memory retention and context retrieval pipeline.
+`openmemory_rs` implements a unified, multi-tiered cognitive memory engine designed specifically for AI agent networks like **OpenZ**. Unlike traditional single-layer database setups, `openmemory_rs` maps data across **6 cognitive layers**, combining session variables, explicit entity relationships, vector embeddings, episodic reflection tracks, AST dependencies, and shared multi-agent state boards.
 
-A visual breakdown of the architecture is available in the interactive diagram: [architecture.html](architecture.html).
+An interactive dark-themed visualization is available in: [docs/architecture.html](architecture.html).
 
 ---
 
-## The 5 Cognitive Memory Layers
+## The 6 Cognitive Memory Layers
 
 ```
-        ┌────────────────────────────────────────────────────────┐
-        │                 Memory Coordinator                     │
-        └───────────────────────────┬────────────────────────────┘
-                                    │
-         ┌──────────────────────────┼──────────────────────────┐
-         ▼                          ▼                          ▼
-┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-│  Working Memory  │      │   Graph Memory   │      │ Semantic Memory  │
-│  (Session RAM)   │      │ (Entities/Edges) │      │ (Vector Vectors) │
-└──────────────────┘      └──────────────────┘      └──────────────────┘
-                                    ▲                          ▲
-                                    │                          │
-                          ┌─────────┴────────┘      ┌──────────┴────────┐
-                          ▼                         ▼                   ▼
-                 ┌──────────────────┐      ┌──────────────────┐┌──────────────────┐
-                 │ Episodic Memory  │      │ Codebase Memory  ││ Embedding Engine │
-                 │ (Execution Logs) │      │  (Signatures)    ││(all-MiniLM-L6-v2)│
-                 └──────────────────┘      └──────────────────┘└──────────────────┘
+                       ┌────────────────────────────────────────────────────────┐
+                       │               Memory Coordinator                       │
+                       └───────────────────────────┬────────────────────────────┘
+                                                   │
+         ┌──────────────────┬──────────────────────┼──────────────────────┬──────────────────┐
+         ▼                  ▼                      ▼                      ▼                  ▼
+┌────────────────┐ ┌────────────────┐     ┌────────────────┐     ┌────────────────┐ ┌────────────────┐
+│ Working Memory │ │  Graph Memory  │     │Semantic Memory │     │Episodic Memory │ │Codebase Memory │
+│ (Session RAM)  │ │(Entities/Edges)│     │(Vector Blobs)  │     │(Reflection Logs)││  (AST Graphs)  │
+└────────────────┘ └────────────────┘     └────────────────┘     └────────────────┘ └────────────────┘
+                                                   ▲                      ▲                  ▲
+                                                   │                      │                  │
+                                          ┌────────┴───────┐     ┌────────┴───────┐ ┌────────┴───────┐
+                                          │Shared Workspace│     │Embedding Engine│ │Evolution Graph │
+                                          │ (Team Board)   │     │(all-MiniLM-L6) │ │ (Version Logs) │
+                                          └────────────────┘     └────────────────┘ └────────────────┘
 ```
 
 ### 1. Working Memory
 * **File**: [src/layers/working.rs](../src/layers/working.rs)
-* **Description**: A session-bound, in-memory store utilizing safe concurrency guards (`RwLock<HashMap<String, String>>`).
-* **Role**: Temporarily caches subsecond transaction-level variables, execution states, and ephemeral environment contexts. This layer clears when the server shuts down or restarts.
+* **Role**: A session-bound, volatile cache backed by concurrent `RwLock<HashMap<String, String>>`. It stores transaction IDs, active loop states, and runtime contexts, clearing automatically when the process restarts.
 
 ### 2. Graph Memory
 * **File**: [src/layers/graph.rs](../src/layers/graph.rs)
-* **Description**: A persistent SQLite store representing explicit entities, connections, and JSON-encoded observations.
-* **Role**: Preserves structural relational knowledge graphs. Fully compatible with the reference MCP Memory Spec, mapping tools like `read_graph`, `search_nodes`, `open_nodes`, `create_entities`, and `create_relations`.
+* **Role**: Structured knowledge storage mapping nodes, relations, and observations. Out-of-the-box compatibility with standard MCP client calls (`read_graph`, `search_nodes`, `open_nodes`).
 
 ### 3. Semantic Memory
 * **File**: [src/layers/semantic.rs](../src/layers/semantic.rs)
-* **Description**: SQLite metadata database storing text observations linked with floating-point embedding blobs.
-* **Role**: Powers semantic search. Incoming queries are vectorized using the local `fastembed` engine and compared using cosine similarity against historical semantic facts, bypasses exact word matches.
+* **Role**: Local vector memory storing text snippets and high-dimension vector floats. Natural language queries are vectorized using the `fastembed` model (`all-MiniLM-L6-v2`) and matched using cosine similarity.
 
-### 4. Episodic Memory
+### 4. Episodic & Reflection Memory
 * **File**: [src/layers/episodic.rs](../src/layers/episodic.rs)
-* **Description**: Log execution database storing step-by-step agent task histories, reflections, and success rates.
-* **Role**: Tracks agent performance. By logging task parameters, reflections, and whether a task failed, it assists in computing context priority and avoids replicating failed execution strategies in future runs.
+* **Role**: Stores detailed logs of agent tasks, steps taken, errors, reflections (what worked/failed and why), and logs tool latencies and success counts. Allows agents to query their historical experience to avoid repeating past bugs or failing strategies.
 
-### 5. Codebase Memory
+### 5. Code & AST Memory
 * **File**: [src/layers/codebase.rs](../src/layers/codebase.rs)
-* **Description**: Code-index database mapping module, class, struct, function signatures, file paths, and dependency graphs.
-* **Role**: Helps developers and agents map code workspaces. By storing source signatures, it allows agents to instantly retrieve references, definitions, and file hierarchy mappings during programming tasks.
+* **Role**: Parses workspace files into AST structural elements (functions, structs, classes, impls) and registers call chains and dependency maps. Also logs the repository's file version evolution and bug records.
+
+### 6. Shared Team Memory Workspace
+* **File**: [src/layers/shared.rs](../src/layers/shared.rs)
+* **Role**: A synchronized key-value database allowing different agents (e.g. Research Agent and Coding Agent) to securely register and pull shared facts or context.
 
 ---
 
-## Unified SQLite Storage Schema
+## Consolidated SQLite Schema
 
-All persistent memory layers are consolidated into a single local SQLite database (defaulting to `memory.db`). This design avoids file-locking issues, increases speed, and allows multi-table joins.
+`openmemory_rs` persists all structured data inside a local, transaction-safe SQLite database file (`memory.db`), defining 9 normalized tables.
 
-### Table Definitions
+### Table Structure Mappings
 
-#### 1. Graph Memory Tables
-* **`graph_nodes`**: Defines knowledge graph entities.
+#### 1. Graph Tables
+* **`graph_nodes`**: Tracks entity profiles.
   ```sql
   CREATE TABLE IF NOT EXISTS graph_nodes (
       name TEXT PRIMARY KEY,
       entity_type TEXT NOT NULL,
-      observations TEXT NOT NULL -- Serialized JSON array of text observations
+      observations TEXT NOT NULL -- JSON list of observations
   );
   ```
-* **`graph_edges`**: Defines links between nodes.
+* **`graph_edges`**: Tracks relational connections.
   ```sql
   CREATE TABLE IF NOT EXISTS graph_edges (
       from_name TEXT NOT NULL,
@@ -81,20 +78,20 @@ All persistent memory layers are consolidated into a single local SQLite databas
   );
   ```
 
-#### 2. Semantic Memory Tables
-* **`semantic_metadata`**: Holds vector metadata mappings.
+#### 2. Vector Semantic Tables
+* **`semantic_metadata`**: Matches text fragments to model vectors.
   ```sql
   CREATE TABLE IF NOT EXISTS semantic_metadata (
       node_id TEXT PRIMARY KEY,
       raw_text TEXT NOT NULL,
-      embedding BLOB NOT NULL, -- Binary float array representing vectors
+      embedding BLOB NOT NULL, -- Binary vector representation
       timestamp TEXT NOT NULL,
       importance REAL NOT NULL DEFAULT 1.0
   );
   ```
 
-#### 3. Episodic Memory Tables
-* **`episodic_logs`**: Tracks agent episodes and reflections.
+#### 3. Agent Experience & Tool Performance Tables
+* **`episodic_logs`**: Tracks runtime steps and reflections.
   ```sql
   CREATE TABLE IF NOT EXISTS episodic_logs (
       id TEXT PRIMARY KEY,
@@ -106,28 +103,84 @@ All persistent memory layers are consolidated into a single local SQLite databas
       created_at TEXT NOT NULL
   );
   ```
-
-#### 4. Codebase Memory Tables
-* **`codebase_signatures`**: Indexes code symbols.
+* **`reflection_memory`**: Stores root-cause analysis and lessons learned.
   ```sql
-  CREATE TABLE IF NOT EXISTS codebase_signatures (
+  CREATE TABLE IF NOT EXISTS reflection_memory (
       id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      item_name TEXT NOT NULL,
-      item_type TEXT NOT NULL,
-      signature TEXT NOT NULL,
-      dependencies TEXT -- Serialized JSON list of dependencies/imports
+      task_description TEXT NOT NULL,
+      status TEXT NOT NULL, -- "Success" or "Failed"
+      attempt_number INTEGER NOT NULL,
+      steps_taken TEXT NOT NULL,
+      error_encountered TEXT,
+      root_cause TEXT,
+      solution_applied TEXT,
+      reflection TEXT NOT NULL,
+      created_at TEXT NOT NULL
+  );
+  ```
+* **`tool_performance`**: Aggregates latency and usage metrics for tools/models.
+  ```sql
+  CREATE TABLE IF NOT EXISTS tool_performance (
+      tool_name TEXT NOT NULL,
+      model_name TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      success_count INTEGER NOT NULL DEFAULT 0,
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      average_latency REAL NOT NULL DEFAULT 0.0,
+      last_used TEXT NOT NULL,
+      PRIMARY KEY (tool_name, model_name, task_type)
   );
   ```
 
----
+#### 4. AST Code & Version Tables
+* **`code_elements`**: Maps AST code items.
+  ```sql
+  CREATE TABLE IF NOT EXISTS code_elements (
+      element_id TEXT PRIMARY KEY,
+      file_path TEXT NOT NULL,
+      element_type TEXT NOT NULL, -- "Function", "Struct", "Class", etc.
+      name TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      ast_json TEXT, -- Optional JSON AST node data
+      parent_id TEXT,
+      start_line INTEGER NOT NULL,
+      end_line INTEGER NOT NULL
+  );
+  ```
+* **`code_calls`**: Maps calling stacks.
+  ```sql
+  CREATE TABLE IF NOT EXISTS code_calls (
+      caller_id TEXT NOT NULL,
+      callee_id TEXT NOT NULL,
+      call_site TEXT,
+      PRIMARY KEY (caller_id, callee_id)
+  );
+  ```
+* **`repository_evolution`**: Monitors file modifications and bug history.
+  ```sql
+  CREATE TABLE IF NOT EXISTS repository_evolution (
+      file_path TEXT NOT NULL,
+      version TEXT NOT NULL,
+      commit_hash TEXT,
+      author TEXT,
+      change_type TEXT NOT NULL,
+      summary_of_changes TEXT NOT NULL,
+      bug_introduced INTEGER NOT NULL DEFAULT 0,
+      bug_fixed INTEGER NOT NULL DEFAULT 0,
+      timestamp TEXT NOT NULL,
+      PRIMARY KEY (file_path, version)
+  );
+  ```
 
-## Control Flow Lifecycle
-
-When an MCP client initiates a query or execution step:
-
-1. **Request Reception**: The JSON-RPC request is parsed via the `rmcp` stdin/stdout stdio transport handler in [src/mcp.rs](../src/mcp.rs).
-2. **Coordinated Dispatch**: The [MemoryCoordinator](../src/coordinator.rs) routes the parameters to the requested layers (e.g. searching entities, querying embeddings, logging steps).
-3. **Local Embedding Generation**: For semantic/vector search operations, the text is fed to `fastembed` locally to produce a 384-dimensional vector (`all-MiniLM-L6-v2`).
-4. **Ranked Matching**: Matches are evaluated using the `Ranker` model in [src/search/ranker.rs](../src/search/ranker.rs), which integrates cosine similarity, temporal decay, and importance factors.
-5. **JSON-RPC Response**: Output is formatted as a standardized MCP tool execution result and sent back to the stdout stream.
+#### 5. Shared Agent Workspace Tables
+* **`shared_agent_memory`**: Allows state exchange between agent instances.
+  ```sql
+  CREATE TABLE IF NOT EXISTS shared_agent_memory (
+      memory_key TEXT PRIMARY KEY,
+      memory_value TEXT NOT NULL,
+      source_agent TEXT NOT NULL,
+      target_agents TEXT NOT NULL, -- JSON list of recipient IDs
+      importance REAL NOT NULL DEFAULT 1.0,
+      timestamp TEXT NOT NULL
+  );
+  ```
