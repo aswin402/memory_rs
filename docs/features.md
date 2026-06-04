@@ -13,7 +13,7 @@ The `memory_rs` server is packed with modern architectural and performance upgra
 ---
 
 ## 2. Dynamic Memory Ranking and Decay
-The memory engine uses a multi-factor ranking model in [src/search/ranker.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/search/ranker.rs) to rank search results. Rather than just returning items matching keywords, it implements cognitive models that evaluate:
+The memory engine uses a multi-factor ranking model in [src/search/ranker.rs](../src/search/ranker.rs) to rank search results. Rather than just returning items matching keywords, it implements cognitive models that evaluate:
 
 1. **Semantic Relevance**: How similar is the query to the memory's content using cosine similarity?
 2. **Temporal Recency**: How long ago was the memory captured? Old memories decay unless they are highly important.

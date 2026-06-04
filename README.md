@@ -1,7 +1,7 @@
 # memory_rs
 
 <p align="center">
-  <img src="file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/assets/logo.png" alt="memory_rs Logo" width="320"/>
+  <img src="assets/logo.png" alt="memory_rs Logo" width="320"/>
 </p>
 
 `memory_rs` is a high-performance, cognitive-inspired Model Context Protocol (MCP) memory server written in Rust. Designed to replace simple graph-based memory layers, it integrates a **5-tier cognitive memory architecture** alongside vector search, recency decay, and episodic logs, powered locally by SQLite and ONNX Runtime.
@@ -10,10 +10,10 @@
 
 ## 📖 Documentation Index
 For in-depth guides on systems design and deployment details, view the documents in the `docs/` folder:
-* 🖥️ **Interactive Diagram**: [architecture.html (Standalone SVG/CSS Card)](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/docs/architecture.html)
-* 🧠 **System Architecture**: [architecture.md (Memory Layers & SQLite Tables)](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/docs/architecture.md)
-* ⚡ **Engine Features**: [features.md (Ranking Equations & Local Embedding Specs)](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/docs/features.md)
-* 📁 **Codebase Structure**: [codebase.md (Source Code Modules & Build Guide)](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/docs/codebase.md)
+* 🖥️ **Interactive Diagram**: [docs/architecture.html](docs/architecture.html) (Standalone SVG/CSS Card)
+* 🧠 **System Architecture**: [docs/architecture.md](docs/architecture.md) (Memory Layers & SQLite Tables)
+* ⚡ **Engine Features**: [docs/features.md](docs/features.md) (Ranking Equations & Local Embedding Specs)
+* 📁 **Codebase Structure**: [docs/codebase.md](docs/codebase.md) (Source Code Modules & Build Guide)
 
 ---
 

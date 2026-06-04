@@ -40,29 +40,29 @@ memory_rs/
 ## 2. Code Modules Detailed Description
 
 ### Server Entrypoint
-* **File**: [src/main.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/main.rs)
+* **File**: [src/main.rs](../src/main.rs)
 * **Function**: Initializes the environment logger, parses database configuration settings, constructs a thread-safe `MemoryCoordinator`, and hands off execution to the `mcp::run_server` stdio handler.
 
 ### Stdio MCP Handler
-* **File**: [src/mcp.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/mcp.rs)
+* **File**: [src/mcp.rs](../src/mcp.rs)
 * **Function**: Defines the Stdio JSON-RPC transport wrapper mapping input structs. Implements `rmcp` handler routers to dispatch requests to coordinator layer actions, returning standardized MCP outputs.
 
 ### Orchestration layer
-* **File**: [src/coordinator.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/coordinator.rs)
+* **File**: [src/coordinator.rs](../src/coordinator.rs)
 * **Function**: Bundles all 5 layers into a single coordinating struct wrapped inside atomic arc references (`Arc<MemoryCoordinator>`) for safe concurrent scheduling across threads.
 
 ### Search and Decay Models
-* **File**: [src/search/ranker.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/search/ranker.rs)
+* **File**: [src/search/ranker.rs](../src/search/ranker.rs)
 * **Function**: Declares the `Ranker` utility implementing exponential time-based decay and weighting calculations to score context relevance.
 
 ### Persistent Layer Models
-* **File**: [src/layers/graph.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/layers/graph.rs)
+* **File**: [src/layers/graph.rs](../src/layers/graph.rs)
   * Implements sqlite-backed graph node CRUD, relationship links, search filtering, and node updates.
-* **File**: [src/layers/semantic.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/layers/semantic.rs)
+* **File**: [src/layers/semantic.rs](../src/layers/semantic.rs)
   * Implements sqlite-backed semantic metadata tracking and blob stores.
-* **File**: [src/layers/episodic.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/layers/episodic.rs)
+* **File**: [src/layers/episodic.rs](../src/layers/episodic.rs)
   * Implements sqlite-backed execution steps, reflection logs, and successes.
-* **File**: [src/layers/codebase.rs](file:///home/aswin/programming/vscode/myProjects/ai_agent_tools/memory_rs/src/layers/codebase.rs)
+* **File**: [src/layers/codebase.rs](../src/layers/codebase.rs)
   * Implements sqlite-backed codebase signature index tracking.
 
 ---
