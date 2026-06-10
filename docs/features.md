@@ -37,7 +37,10 @@ Where:
 
 ## 4. AST Code Parsing & Call Graphs
 `openmemory_rs` replaces generic codebase grepping with a local structural code analyzer.
-* **Symbol Extraction**: Extracts definitions, Structs, Functions, Classes, Impls, and Enums from `.rs`, `.py`, `.js`, `.ts`, and `.go` source files.
+* **Symbol Extraction**: Parses AST trees using tree-sitter grammars (Rust, Python, JavaScript, TypeScript, TSX) and fallback line-by-line parsing (for languages like Go). Structurally indexes:
+  * Rust: `struct`, `function`, `enum`, `trait`, `impl`
+  * Python: `class`, `function`
+  * JS/TS/TSX: `class`, `function`, `method`, `interface`, `type_alias`, `enum`
 * **Call Mapping**: Correlates element declarations to construct call hierarchy trees.
 * **Impact Analysis**: Allows agents to evaluate what files or methods are affected if a specific struct or function signature is changed.
 * **Repository Evolution**: Logs commit summaries, authors, versions, and tags files containing bugs to pinpoint error-prone components in the repo.

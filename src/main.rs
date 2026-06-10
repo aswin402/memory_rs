@@ -19,8 +19,20 @@ async fn main() -> Result<()> {
 
     let coordinator = Arc::new(MemoryCoordinator::new(&db_path)?);
 
-    log::info!("Starting Stdio transport for Memory MCP server...");
-    mcp::run_server(coordinator).await?;
+    let args: Vec<String> = std::env::args().collect();
+    let grpc_port = if let Some(pos) = args.iter().position(|a| a == "--grpc") {
+        args.get(pos + 1).and_then(|p| p.parse::<u16>().ok())
+    } else {
+        None
+    };
+
+    if let Some(port) = grpc_port {
+        log::info!("Starting gRPC transport for Memory MCP server on port {}...", port);
+        mcp::run_grpc_server(coordinator, port).await?;
+    } else {
+        log::info!("Starting Stdio transport for Memory MCP server...");
+        mcp::run_server(coordinator).await?;
+    }
 
     Ok(())
 }

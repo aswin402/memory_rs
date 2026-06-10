@@ -97,5 +97,10 @@ impl SharedMemory {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM shared_agent_memory WHERE memory_key = ?1", params![key])?;
         Ok(())
+     }
+
+    pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
+        *self.conn.lock() = Connection::open(db_path)?;
+        Ok(())
     }
 }

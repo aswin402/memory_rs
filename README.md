@@ -49,7 +49,7 @@ For deep-dive specification sheets and code module mappings, view the documents 
 
 ## 🛠️ System Architecture
 
-The core coordinator routes incoming JSON-RPC calls over Stdio streams to the corresponding memory layer, updating SQLite tables and calculating vector cosine similarity scores on demand.
+The core coordinator routes incoming JSON-RPC calls over Stdio streams or Tonic gRPC transport to the corresponding memory layer, updating SQLite tables and calculating vector cosine similarity scores on demand.
 
 ```mermaid
 graph TD
@@ -100,6 +100,16 @@ Add the configuration into your client's config file (e.g., `~/.config/Claude/cl
   }
 }
 ```
+
+---
+
+## 📡 gRPC Transport
+
+`openmemory_rs` natively supports serving over gRPC in addition to stdio. Launch the server with `--grpc <port>` to bind it as a gRPC service:
+```bash
+./target/release/openmemory_rs --grpc 50051
+```
+This isolates the communication channel, making it completely resilient to standard stream pollution (like random logs or printing to `stdout` from libraries).
 
 ---
 

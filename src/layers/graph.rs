@@ -285,6 +285,11 @@ impl GraphMemory {
 
         Ok(KnowledgeGraph { entities, relations })
     }
+
+    pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
+        *self.conn.lock() = Connection::open(db_path)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

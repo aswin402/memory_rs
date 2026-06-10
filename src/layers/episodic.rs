@@ -236,4 +236,9 @@ impl EpisodicMemory {
         }
         Ok(results)
     }
+
+    pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
+        *self.conn.lock() = Connection::open(db_path)?;
+        Ok(())
+    }
 }
