@@ -15,7 +15,7 @@ Date: 2026-06-26
 - [x] Task 8: (Conflict Plan Task 2) Graph Layer Conflict Detection & Resolution
 - [x] Task 9: (Conflict Plan Task 3) Semantic Layer Conflict Detection & Resolution
 - [x] Task 10: (Conflict Plan Task 4) Expose MCP Tool
-- [ ] Task 11: (Conflict Plan Task 5) gRPC Integration Testing
+- [x] Task 11: (Conflict Plan Task 5) gRPC Integration Testing
 
 ## Progress Log
 - Task 1: complete (commits bd1d5ff, schema updated and verified)
@@ -28,3 +28,4 @@ Date: 2026-06-26
 - Task 8: complete (commits dc51d4e, graph conflict detection and resolution implemented and unit tested)
 - Task 9: complete (commits c127e32, Semantic Layer conflict detection & resolution implemented and unit tested)
 - Task 10: complete (commits 35e8726, detect_and_resolve_conflicts MCP tool exposed and unit tested)
+- Task 11: complete (commits 74906d4, added gRPC integration test coverage for detect_and_resolve_conflicts)
