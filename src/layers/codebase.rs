@@ -56,8 +56,12 @@ impl CodebaseMemory {
                 ast_json TEXT,
                 parent_id TEXT,
                 start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL
+                end_line INTEGER NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*'
             );
+            CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id);
             CREATE TABLE IF NOT EXISTS code_calls (
                 caller_id TEXT NOT NULL,
                 callee_id TEXT NOT NULL,
@@ -77,17 +81,28 @@ impl CodebaseMemory {
                 PRIMARY KEY (file_path, version)
             );",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id)", []);
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
 
-    pub fn index_element(&self, el: CodeElement) -> Result<()> {
+    pub fn index_element(&self, el: CodeElement, scope: &crate::layers::MemoryScope) -> Result<()> {
         let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         conn.execute(
             "INSERT OR REPLACE INTO code_elements 
-             (element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line, user_id, session_id, agent_id) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 el.id,
                 el.file_path,
@@ -97,7 +112,10 @@ impl CodebaseMemory {
                 el.ast_json,
                 el.parent_id,
                 el.start_line,
-                el.end_line
+                el.end_line,
+                user_id,
+                session_id,
+                agent_id
             ],
         )?;
         Ok(())
@@ -170,43 +188,40 @@ impl CodebaseMemory {
         Ok(results)
     }
 
-    pub fn query_elements(&self, file_path: &str, query: &str) -> Result<Vec<CodeElement>> {
+    pub fn query_elements(&self, file_path: &str, query: &str, scope: &crate::layers::MemoryScope) -> Result<Vec<CodeElement>> {
         let conn = self.conn.lock();
         let mut results = Vec::new();
 
-        let mut stmt = if !file_path.is_empty() && !query.is_empty() {
-            conn.prepare(
-                "SELECT element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line 
-                 FROM code_elements WHERE file_path = ?1 AND name LIKE ?2"
-            )?
-        } else if !file_path.is_empty() {
-            conn.prepare(
-                "SELECT element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line 
-                 FROM code_elements WHERE file_path = ?1"
-            )?
-        } else if !query.is_empty() {
-            conn.prepare(
-                "SELECT element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line 
-                 FROM code_elements WHERE name LIKE ?1 OR element_type LIKE ?1"
-            )?
-        } else {
-            conn.prepare(
-                "SELECT element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line 
-                 FROM code_elements"
-            )?
-        };
+        let mut conditions = vec![
+            "(?1 IS NULL OR user_id = ?1 OR user_id = '*')".to_string(),
+            "(?2 IS NULL OR session_id = ?2 OR session_id = '*')".to_string(),
+            "(?3 IS NULL OR agent_id = ?3 OR agent_id = '*')".to_string(),
+        ];
 
-        let mut rows = if !file_path.is_empty() && !query.is_empty() {
-            let pattern = format!("%{}%", query);
-            stmt.query(params![file_path, pattern])?
-        } else if !file_path.is_empty() {
-            stmt.query(params![file_path])?
-        } else if !query.is_empty() {
-            let pattern = format!("%{}%", query);
-            stmt.query(params![pattern])?
-        } else {
-            stmt.query([])?
-        };
+        let mut params = vec![
+            scope.user_id.clone(),
+            scope.session_id.clone(),
+            scope.agent_id.clone(),
+        ];
+
+        if !file_path.is_empty() {
+            conditions.push(format!("file_path = ?{}", params.len() + 1));
+            params.push(Some(file_path.to_string()));
+        }
+
+        if !query.is_empty() {
+            conditions.push(format!("(name LIKE ?{0} OR element_type LIKE ?{0})", params.len() + 1));
+            params.push(Some(format!("%{}%", query)));
+        }
+
+        let sql = format!(
+            "SELECT element_id, file_path, element_type, name, signature, ast_json, parent_id, start_line, end_line 
+             FROM code_elements WHERE {}",
+            conditions.join(" AND ")
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query(rusqlite::params_from_iter(params))?;
 
         while let Some(row) = rows.next()? {
             results.push(CodeElement {
@@ -266,8 +281,30 @@ impl CodebaseMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;",
+            PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS code_elements (
+                element_id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                element_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                ast_json TEXT,
+                parent_id TEXT,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*'
+            );
+            CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id);",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id)", []);
+
         *self.conn.lock() = conn;
         Ok(())
     }

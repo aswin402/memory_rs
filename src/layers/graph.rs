@@ -38,37 +38,62 @@ impl GraphMemory {
             "PRAGMA journal_mode=WAL;
             PRAGMA synchronous=NORMAL;
             CREATE TABLE IF NOT EXISTS graph_nodes (
-                name TEXT PRIMARY KEY,
+                name TEXT,
                 entity_type TEXT NOT NULL,
-                observations TEXT NOT NULL
+                observations TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*',
+                PRIMARY KEY (name, user_id, session_id, agent_id)
             );
+            CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id);
             CREATE TABLE IF NOT EXISTS graph_edges (
                 from_name TEXT NOT NULL,
                 to_name TEXT NOT NULL,
                 relation_type TEXT NOT NULL,
-                PRIMARY KEY (from_name, to_name, relation_type)
-            );",
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*',
+                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id)", []);
+
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
 
-    pub fn create_entities(&self, entities: Vec<Entity>) -> Result<Vec<Entity>> {
+    pub fn create_entities(&self, entities: Vec<Entity>, scope: &crate::layers::MemoryScope) -> Result<Vec<Entity>> {
         let conn = self.conn.lock();
         let mut created = Vec::new();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for entity in entities {
             // Check if entity already exists
             let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name = ?1)",
-                params![entity.name],
+                "SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4)",
+                params![entity.name, user_id, session_id, agent_id],
                 |row| row.get(0),
             )?;
             if !exists {
                 let obs_str = serde_json::to_string(&entity.observations)?;
                 conn.execute(
-                    "INSERT INTO graph_nodes (name, entity_type, observations) VALUES (?1, ?2, ?3)",
-                    params![entity.name, entity.entity_type, obs_str],
+                    "INSERT INTO graph_nodes (name, entity_type, observations, user_id, session_id, agent_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![entity.name, entity.entity_type, obs_str, user_id, session_id, agent_id],
                 )?;
                 created.push(entity);
             }
@@ -76,19 +101,23 @@ impl GraphMemory {
         Ok(created)
     }
 
-    pub fn create_relations(&self, relations: Vec<Relation>) -> Result<Vec<Relation>> {
+    pub fn create_relations(&self, relations: Vec<Relation>, scope: &crate::layers::MemoryScope) -> Result<Vec<Relation>> {
         let conn = self.conn.lock();
         let mut created = Vec::new();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for relation in relations {
             let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3)",
-                params![relation.from, relation.to, relation.relation_type],
+                "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6)",
+                params![relation.from, relation.to, relation.relation_type, user_id, session_id, agent_id],
                 |row| row.get(0),
             )?;
             if !exists {
                 conn.execute(
-                    "INSERT INTO graph_edges (from_name, to_name, relation_type) VALUES (?1, ?2, ?3)",
-                    params![relation.from, relation.to, relation.relation_type],
+                    "INSERT INTO graph_edges (from_name, to_name, relation_type, user_id, session_id, agent_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![relation.from, relation.to, relation.relation_type, user_id, session_id, agent_id],
                 )?;
                 created.push(relation);
             }
@@ -99,14 +128,19 @@ impl GraphMemory {
     pub fn add_observations(
         &self,
         observations: Vec<AddObservationsInput>,
+        scope: &crate::layers::MemoryScope,
     ) -> Result<Vec<AddObservationsOutput>> {
         let conn = self.conn.lock();
         let mut results = Vec::new();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for obs in observations {
             let current_obs_str: Option<String> = conn
                 .query_row(
-                    "SELECT observations FROM graph_nodes WHERE name = ?1",
-                    params![obs.entity_name],
+                    "SELECT observations FROM graph_nodes WHERE name = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4",
+                    params![obs.entity_name, user_id, session_id, agent_id],
                     |row| row.get(0),
                 )
                 .ok();
@@ -122,39 +156,47 @@ impl GraphMemory {
                 }
                 let new_obs_json = serde_json::to_string(&current_obs)?;
                 conn.execute(
-                    "UPDATE graph_nodes SET observations = ?1 WHERE name = ?2",
-                    params![new_obs_json, obs.entity_name],
+                    "UPDATE graph_nodes SET observations = ?1 WHERE name = ?2 AND user_id = ?3 AND session_id = ?4 AND agent_id = ?5",
+                    params![new_obs_json, obs.entity_name, user_id, session_id, agent_id],
                 )?;
                 results.push(AddObservationsOutput {
                     entity_name: obs.entity_name,
                     added_observations: added,
                 });
             } else {
-                anyhow::bail!("Entity with name {} not found", obs.entity_name);
+                anyhow::bail!("Entity with name {} not found in scope", obs.entity_name);
             }
         }
         Ok(results)
     }
 
-    pub fn delete_entities(&self, names: Vec<String>) -> Result<()> {
+    pub fn delete_entities(&self, names: Vec<String>, scope: &crate::layers::MemoryScope) -> Result<()> {
         let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for name in names {
-            conn.execute("DELETE FROM graph_nodes WHERE name = ?1", params![name])?;
+            conn.execute("DELETE FROM graph_nodes WHERE name = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4", params![name, user_id, session_id, agent_id])?;
             conn.execute(
-                "DELETE FROM graph_edges WHERE from_name = ?1 OR to_name = ?1",
-                params![name],
+                "DELETE FROM graph_edges WHERE (from_name = ?1 OR to_name = ?1) AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4",
+                params![name, user_id, session_id, agent_id],
             )?;
         }
         Ok(())
     }
 
-    pub fn delete_observations(&self, deletions: Vec<DeleteObservationsInput>) -> Result<()> {
+    pub fn delete_observations(&self, deletions: Vec<DeleteObservationsInput>, scope: &crate::layers::MemoryScope) -> Result<()> {
         let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for del in deletions {
             let current_obs_str: Option<String> = conn
                 .query_row(
-                    "SELECT observations FROM graph_nodes WHERE name = ?1",
-                    params![del.entity_name],
+                    "SELECT observations FROM graph_nodes WHERE name = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4",
+                    params![del.entity_name, user_id, session_id, agent_id],
                     |row| row.get(0),
                 )
                 .ok();
@@ -167,31 +209,35 @@ impl GraphMemory {
                     .collect();
                 let new_obs_json = serde_json::to_string(&filtered_obs)?;
                 conn.execute(
-                    "UPDATE graph_nodes SET observations = ?1 WHERE name = ?2",
-                    params![new_obs_json, del.entity_name],
+                    "UPDATE graph_nodes SET observations = ?1 WHERE name = ?2 AND user_id = ?3 AND session_id = ?4 AND agent_id = ?5",
+                    params![new_obs_json, del.entity_name, user_id, session_id, agent_id],
                 )?;
             }
         }
         Ok(())
     }
 
-    pub fn delete_relations(&self, relations: Vec<Relation>) -> Result<()> {
+    pub fn delete_relations(&self, relations: Vec<Relation>, scope: &crate::layers::MemoryScope) -> Result<()> {
         let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
         for rel in relations {
             conn.execute(
-                "DELETE FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3",
-                params![rel.from, rel.to, rel.relation_type],
+                "DELETE FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6",
+                params![rel.from, rel.to, rel.relation_type, user_id, session_id, agent_id],
             )?;
         }
         Ok(())
     }
 
-    pub fn read_graph(&self) -> Result<KnowledgeGraph> {
+    pub fn read_graph(&self, scope: &crate::layers::MemoryScope) -> Result<KnowledgeGraph> {
         let conn = self.conn.lock();
 
         let mut stmt_nodes =
-            conn.prepare("SELECT name, entity_type, observations FROM graph_nodes")?;
-        let mut node_rows = stmt_nodes.query([])?;
+            conn.prepare("SELECT name, entity_type, observations FROM graph_nodes WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')")?;
+        let mut node_rows = stmt_nodes.query(params![scope.user_id, scope.session_id, scope.agent_id])?;
         let mut entities = Vec::new();
         while let Some(row) = node_rows.next()? {
             let name: String = row.get(0)?;
@@ -206,8 +252,8 @@ impl GraphMemory {
         }
 
         let mut stmt_edges =
-            conn.prepare("SELECT from_name, to_name, relation_type FROM graph_edges")?;
-        let mut edge_rows = stmt_edges.query([])?;
+            conn.prepare("SELECT from_name, to_name, relation_type FROM graph_edges WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')")?;
+        let mut edge_rows = stmt_edges.query(params![scope.user_id, scope.session_id, scope.agent_id])?;
         let mut relations = Vec::new();
         while let Some(row) = edge_rows.next()? {
             relations.push(Relation {
@@ -223,15 +269,18 @@ impl GraphMemory {
         })
     }
 
-    pub fn search_nodes(&self, query: &str) -> Result<KnowledgeGraph> {
+    pub fn search_nodes(&self, query: &str, scope: &crate::layers::MemoryScope) -> Result<KnowledgeGraph> {
         let conn = self.conn.lock();
         let query_pattern = format!("%{}%", query.to_lowercase());
 
         let mut stmt_nodes = conn.prepare(
             "SELECT name, entity_type, observations FROM graph_nodes 
-             WHERE LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1"
+             WHERE (LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1)
+               AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
+               AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
+               AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
         )?;
-        let mut node_rows = stmt_nodes.query(params![query_pattern])?;
+        let mut node_rows = stmt_nodes.query(params![query_pattern, scope.user_id, scope.session_id, scope.agent_id])?;
         let mut entities = Vec::new();
 
         while let Some(row) = node_rows.next()? {
@@ -249,15 +298,18 @@ impl GraphMemory {
         // Return relations where at least one endpoint matches query using optimized SQL Subqueries
         let mut stmt_edges = conn.prepare(
             "SELECT DISTINCT from_name, to_name, relation_type FROM graph_edges 
-             WHERE from_name IN (
+             WHERE (from_name IN (
                  SELECT name FROM graph_nodes 
-                 WHERE LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1
+                 WHERE (LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1)
              ) OR to_name IN (
                  SELECT name FROM graph_nodes 
-                 WHERE LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1
-             )"
+                 WHERE (LOWER(name) LIKE ?1 OR LOWER(entity_type) LIKE ?1 OR LOWER(observations) LIKE ?1)
+             ))
+             AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
+             AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
+             AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
         )?;
-        let mut edge_rows = stmt_edges.query(params![query_pattern])?;
+        let mut edge_rows = stmt_edges.query(params![query_pattern, scope.user_id, scope.session_id, scope.agent_id])?;
         let mut relations = Vec::new();
         while let Some(row) = edge_rows.next()? {
             relations.push(Relation {
@@ -273,14 +325,14 @@ impl GraphMemory {
         })
     }
 
-    pub fn open_nodes(&self, names: Vec<String>) -> Result<KnowledgeGraph> {
+    pub fn open_nodes(&self, names: Vec<String>, scope: &crate::layers::MemoryScope) -> Result<KnowledgeGraph> {
         let conn = self.conn.lock();
         let mut entities = Vec::new();
 
         for name in &names {
             let mut stmt =
-                conn.prepare("SELECT entity_type, observations FROM graph_nodes WHERE name = ?1")?;
-            let mut rows = stmt.query(params![name])?;
+                conn.prepare("SELECT entity_type, observations FROM graph_nodes WHERE name = ?1 AND (?2 IS NULL OR user_id = ?2 OR user_id = '*') AND (?3 IS NULL OR session_id = ?3 OR session_id = '*') AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')")?;
+            let mut rows = stmt.query(params![name, scope.user_id, scope.session_id, scope.agent_id])?;
             if let Some(row) = rows.next()? {
                 let entity_type: String = row.get(0)?;
                 let obs_json: String = row.get(1)?;
@@ -295,18 +347,33 @@ impl GraphMemory {
 
         let mut relations = Vec::new();
         if !names.is_empty() {
-            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let n = names.len();
+            let placeholders_from = (4..=3+n)
+                .map(|i| format!("?{}", i))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let placeholders_to = (4+n..=3+2*n)
+                .map(|i| format!("?{}", i))
+                .collect::<Vec<_>>()
+                .join(", ");
             let sql = format!(
-                "SELECT DISTINCT from_name, to_name, relation_type FROM graph_edges WHERE from_name IN ({0}) OR to_name IN ({0})",
-                placeholders
+                "SELECT DISTINCT from_name, to_name, relation_type FROM graph_edges 
+                 WHERE (from_name IN ({0}) OR to_name IN ({1}))
+                   AND (?1 IS NULL OR user_id = ?1 OR user_id = '*')
+                   AND (?2 IS NULL OR session_id = ?2 OR session_id = '*')
+                   AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')",
+                placeholders_from, placeholders_to
             );
             let mut stmt_edges = conn.prepare(&sql)?;
             let mut params = Vec::new();
+            params.push(scope.user_id.clone());
+            params.push(scope.session_id.clone());
+            params.push(scope.agent_id.clone());
             for name in &names {
-                params.push(name.clone());
+                params.push(Some(name.clone()));
             }
             for name in &names {
-                params.push(name.clone());
+                params.push(Some(name.clone()));
             }
             let mut edge_rows = stmt_edges.query(rusqlite::params_from_iter(params))?;
             while let Some(row) = edge_rows.next()? {
@@ -328,8 +395,40 @@ impl GraphMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;",
+            PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS graph_nodes (
+                name TEXT,
+                entity_type TEXT NOT NULL,
+                observations TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*',
+                PRIMARY KEY (name, user_id, session_id, agent_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id);
+            CREATE TABLE IF NOT EXISTS graph_edges (
+                from_name TEXT NOT NULL,
+                to_name TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*',
+                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id)", []);
+
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
+
         *self.conn.lock() = conn;
         Ok(())
     }

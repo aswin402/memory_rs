@@ -34,8 +34,12 @@ impl SemanticMemory {
                 raw_text TEXT NOT NULL,
                 embedding BLOB NOT NULL,
                 timestamp TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 1.0
+                importance REAL NOT NULL DEFAULT 1.0,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*'
             );
+            CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id);
             CREATE TABLE IF NOT EXISTS semantic_vector_mapping (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 node_id TEXT UNIQUE NOT NULL
@@ -61,6 +65,12 @@ impl SemanticMemory {
             SELECT node_id, raw_text FROM semantic_metadata
             WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id)", []);
 
         // Initialize local ONNX fastembed model
         let model = TextEmbedding::try_new(
@@ -95,9 +105,19 @@ impl SemanticMemory {
         })
     }
 
-    pub fn add_fact(&self, node_id: &str, text: &str, importance: f64) -> Result<()> {
+    pub fn add_fact(
+        &self,
+        node_id: &str,
+        text: &str,
+        importance: f64,
+        scope: &crate::layers::MemoryScope,
+    ) -> Result<()> {
         let conn = self.conn.lock();
         let timestamp = chrono::Utc::now().to_rfc3339();
+
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
 
         // Generate embedding vector
         let embeddings = {
@@ -117,9 +137,9 @@ impl SemanticMemory {
             .collect();
 
         conn.execute(
-            "INSERT OR REPLACE INTO semantic_metadata (node_id, raw_text, embedding, timestamp, importance) 
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![node_id, text, blob, timestamp, importance],
+            "INSERT OR REPLACE INTO semantic_metadata (node_id, raw_text, embedding, timestamp, importance, user_id, session_id, agent_id) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![node_id, text, blob, timestamp, importance, user_id, session_id, agent_id],
         )?;
 
         // Map node_id to u32 ID for HNSW
@@ -141,7 +161,7 @@ impl SemanticMemory {
         Ok(())
     }
 
-    pub fn query_similar_facts_vector(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+    pub fn query_similar_facts_vector(&self, query: &str, limit: usize, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
 
         // Generate query embedding
@@ -185,9 +205,19 @@ impl SemanticMemory {
         let mut facts_with_scores = Vec::new();
         for node_id in node_ids {
             let mut stmt = conn.prepare(
-                "SELECT raw_text, embedding, timestamp, importance FROM semantic_metadata WHERE node_id = ?1"
+                "SELECT raw_text, embedding, timestamp, importance 
+                 FROM semantic_metadata 
+                 WHERE node_id = ?1
+                   AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
+                   AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
+                   AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
             )?;
-            let mut rows = stmt.query(params![node_id])?;
+            let mut rows = stmt.query(params![
+                node_id,
+                scope.user_id,
+                scope.session_id,
+                scope.agent_id
+            ])?;
             if let Some(row) = rows.next()? {
                 let raw_text: String = row.get(0)?;
                 let blob: Vec<u8> = row.get(1)?;
@@ -240,10 +270,10 @@ impl SemanticMemory {
         Ok(sorted_facts)
     }
 
-    pub fn query_similar_facts(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+    pub fn query_similar_facts(&self, query: &str, limit: usize, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
         // Fetch candidate lists from vector search (ranked by relevance) and FTS5 search
-        let vector_results = self.query_similar_facts_vector(query, limit * 2)?;
-        let fts_results = self.search_text(query, limit * 2)?;
+        let vector_results = self.query_similar_facts_vector(query, limit * 2, scope)?;
+        let fts_results = self.search_text(query, limit * 2, scope)?;
 
         // Perform Reciprocal Rank Fusion (RRF) with default k = 60
         let rrf_results = crate::search::hybrid::HybridSearch::rrf(&vector_results, &fts_results, 60);
@@ -258,7 +288,7 @@ impl SemanticMemory {
         Ok(final_results)
     }
 
-    pub fn search_text(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+    pub fn search_text(&self, query: &str, limit: usize, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
 
         let clean_query = query
@@ -282,11 +312,20 @@ impl SemanticMemory {
              FROM semantic_fts f
              JOIN semantic_metadata m ON f.node_id = m.node_id
              WHERE semantic_fts MATCH ?1
+               AND (?3 IS NULL OR m.user_id = ?3 OR m.user_id = '*')
+               AND (?4 IS NULL OR m.session_id = ?4 OR m.session_id = '*')
+               AND (?5 IS NULL OR m.agent_id = ?5 OR m.agent_id = '*')
              ORDER BY rank
              LIMIT ?2"
         )?;
 
-        let mut rows = stmt.query(params![match_query, limit])?;
+        let mut rows = stmt.query(params![
+            match_query,
+            limit,
+            scope.user_id,
+            scope.session_id,
+            scope.agent_id
+        ])?;
         let mut results = Vec::new();
         while let Some(row) = rows.next()? {
             results.push(SemanticFact {
@@ -311,8 +350,12 @@ impl SemanticMemory {
                 raw_text TEXT NOT NULL,
                 embedding BLOB NOT NULL,
                 timestamp TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 1.0
+                importance REAL NOT NULL DEFAULT 1.0,
+                user_id TEXT NOT NULL DEFAULT '*',
+                session_id TEXT NOT NULL DEFAULT '*',
+                agent_id TEXT NOT NULL DEFAULT '*'
             );
+            CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id);
             CREATE TABLE IF NOT EXISTS semantic_vector_mapping (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 node_id TEXT UNIQUE NOT NULL
@@ -338,6 +381,12 @@ impl SemanticMemory {
             SELECT node_id, raw_text FROM semantic_metadata
             WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
         )?;
+
+        // Ensure scope columns exist in older database schemas
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id)", []);
 
         let dimensions = 384;
         let hnsw_index = {

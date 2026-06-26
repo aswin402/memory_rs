@@ -16,54 +16,84 @@ use tree_sitter::{Node, Parser};
 
 // ==================== WRAPPER STRUCTS FOR INPUTS ====================
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateEntitiesInput {
     pub entities: Vec<Entity>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateRelationsInput {
     pub relations: Vec<Relation>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct AddObservationsWrapper {
     pub observations: Vec<AddObservationsInput>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteEntitiesInput {
     pub entity_names: Vec<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteObservationsWrapper {
     pub deletions: Vec<DeleteObservationsInput>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteRelationsInput {
     pub relations: Vec<Relation>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EmptyInput {
     pub dummy: Option<bool>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchNodesInput {
     pub query: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenNodesInput {
     pub names: Vec<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 // Extended cognitive memory inputs
@@ -71,6 +101,9 @@ pub struct OpenNodesInput {
 #[serde(rename_all = "camelCase")]
 pub struct IndexCodebaseInput {
     pub path: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -78,6 +111,9 @@ pub struct IndexCodebaseInput {
 pub struct QueryCodeGraphInput {
     pub file_path: Option<String>,
     pub query: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -89,6 +125,9 @@ pub struct LogEpisodeInput {
     pub steps_taken: String,
     pub error_message: Option<String>,
     pub reflection: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -102,12 +141,18 @@ pub struct LogReflectionInput {
     pub root_cause: Option<String>,
     pub solution_applied: Option<String>,
     pub reflection: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RetrieveReflectionsInput {
     pub query: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -115,6 +160,9 @@ pub struct RetrieveReflectionsInput {
 pub struct SearchTextInput {
     pub query: String,
     pub limit: Option<usize>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -126,12 +174,18 @@ pub struct RecordToolPerfInput {
     pub success_count: i64,
     pub failure_count: i64,
     pub average_latency: f64,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryToolPerfInput {
     pub task_type: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -142,12 +196,18 @@ pub struct StoreSharedMemoryInput {
     pub source_agent: String,
     pub target_agents: Vec<String>,
     pub importance: Option<f64>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RetrieveSharedMemoryInput {
     pub agent_id: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id_scope: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -157,7 +217,7 @@ pub struct LogRepoEvolutionInput {
     pub version: String,
     pub commit_hash: Option<String>,
     pub author: Option<String>,
-    pub change_type: String, // "Added", "Modified", "Deleted"
+    pub change_type: String,
     pub summary_of_changes: String,
     pub bug_introduced: bool,
     pub bug_fixed: bool,
@@ -168,10 +228,31 @@ pub struct LogRepoEvolutionInput {
 pub struct QueryRepoEvolutionInput {
     pub file_path: Option<String>,
 }
+
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchIdInput {
     pub branch_id: String,
+}
+
+fn get_scope(
+    user_id: &Option<String>,
+    session_id: &Option<String>,
+    agent_id: &Option<String>,
+) -> crate::layers::MemoryScope {
+    crate::layers::MemoryScope {
+        user_id: user_id.clone(),
+        session_id: session_id.clone(),
+        agent_id: agent_id.clone(),
+    }
+}
+
+fn get_accessed_by(user_id: &Option<String>, agent_id: &Option<String>) -> String {
+    agent_id
+        .as_deref()
+        .or(user_id.as_deref())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 // ==================== MCP SERVER DEFINITION ====================
@@ -196,7 +277,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CreateEntitiesInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.create_entities(input.entities) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.create_entities(input.entities, &scope) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -212,7 +294,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CreateRelationsInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.create_relations(input.relations) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.create_relations(input.relations, &scope) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -226,7 +309,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<AddObservationsWrapper>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.add_observations(input.observations) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.add_observations(input.observations, &scope) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -242,7 +326,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteEntitiesInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.delete_entities(input.entity_names) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.delete_entities(input.entity_names, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Entities deleted successfully",
             )])),
@@ -255,7 +340,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteObservationsWrapper>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.delete_observations(input.deletions) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.delete_observations(input.deletions, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Observations deleted successfully",
             )])),
@@ -268,7 +354,8 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteRelationsInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.delete_relations(input.relations) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.graph.delete_relations(input.relations, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Relations deleted successfully",
             )])),
@@ -277,8 +364,16 @@ impl MemoryServer {
     }
 
     #[tool(description = "Read the entire knowledge graph")]
-    async fn read_graph(&self, _input: Parameters<EmptyInput>) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.read_graph() {
+    async fn read_graph(&self, Parameters(input): Parameters<EmptyInput>) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let res = self.coordinator.graph.read_graph(&scope);
+        if let Ok(ref graph) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for entity in &graph.entities {
+                let _ = self.coordinator.episodic.log_access(&entity.name, "graph", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -292,7 +387,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchNodesInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.search_nodes(&input.query) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let res = self.coordinator.graph.search_nodes(&input.query, &scope);
+        if let Ok(ref graph) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for entity in &graph.entities {
+                let _ = self.coordinator.episodic.log_access(&entity.name, "graph", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -306,7 +409,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<OpenNodesInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.open_nodes(input.names) {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let res = self.coordinator.graph.open_nodes(input.names, &scope);
+        if let Ok(ref graph) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for entity in &graph.entities {
+                let _ = self.coordinator.episodic.log_access(&entity.name, "graph", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -323,9 +434,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<IndexCodebaseInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let scan_path = input.path.unwrap_or_else(|| ".".to_string());
         let path = Path::new(&scan_path);
-        match scan_directory(&self.coordinator, path) {
+        match scan_directory(&self.coordinator, path, &scope) {
             Ok(count) => {
                 let text = format!(
                     "Successfully indexed {} source files under {:?}",
@@ -344,10 +456,18 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryCodeGraphInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let file_path = input.file_path.unwrap_or_default();
         let query = input.query.unwrap_or_default();
 
-        match self.coordinator.codebase.query_elements(&file_path, &query) {
+        let res = self.coordinator.codebase.query_elements(&file_path, &query, &scope);
+        if let Ok(ref elements) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for el in elements {
+                let _ = self.coordinator.episodic.log_access(&el.id, "codebase", &accessed_by);
+            }
+        }
+        match res {
             Ok(elements) => {
                 let text = serde_json::to_string_pretty(&elements).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -364,6 +484,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<LogEpisodeInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let created_at = chrono::Utc::now().to_rfc3339();
 
@@ -377,7 +498,7 @@ impl MemoryServer {
             created_at,
         };
 
-        match self.coordinator.episodic.log_episode(ep) {
+        match self.coordinator.episodic.log_episode(ep, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Episode logged successfully",
             )])),
@@ -392,6 +513,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<LogReflectionInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
 
@@ -408,7 +530,7 @@ impl MemoryServer {
             created_at,
         };
 
-        match self.coordinator.episodic.log_reflection(item) {
+        match self.coordinator.episodic.log_reflection(item, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Reflection logged successfully",
             )])),
@@ -423,8 +545,16 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RetrieveReflectionsInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let query = input.query.unwrap_or_default();
-        match self.coordinator.episodic.get_reflections(&query) {
+        let res = self.coordinator.episodic.get_reflections(&query, &scope);
+        if let Ok(ref reflections) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for r in reflections {
+                let _ = self.coordinator.episodic.log_access(&r.id, "episodic", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -440,8 +570,16 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchTextInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let limit = input.limit.unwrap_or(10);
-        match self.coordinator.semantic.search_text(&input.query, limit) {
+        let res = self.coordinator.semantic.search_text(&input.query, limit, &scope);
+        if let Ok(ref facts) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for f in facts {
+                let _ = self.coordinator.episodic.log_access(&f.node_id, "semantic", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -457,8 +595,16 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchTextInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let limit = input.limit.unwrap_or(10);
-        match self.coordinator.semantic.query_similar_facts(&input.query, limit) {
+        let res = self.coordinator.semantic.query_similar_facts(&input.query, limit, &scope);
+        if let Ok(ref facts) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for f in facts {
+                let _ = self.coordinator.episodic.log_access(&f.node_id, "semantic", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -473,6 +619,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RecordToolPerfInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let last_used = chrono::Utc::now().to_rfc3339();
         let rec = ToolPerformanceRecord {
             tool_name: input.tool_name,
@@ -484,7 +631,7 @@ impl MemoryServer {
             last_used,
         };
 
-        match self.coordinator.episodic.record_tool_performance(rec) {
+        match self.coordinator.episodic.record_tool_performance(rec, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Tool performance metrics recorded",
             )])),
@@ -499,11 +646,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryToolPerfInput>,
     ) -> Result<CallToolResult, McpError> {
-        match self
-            .coordinator
-            .episodic
-            .query_tool_performance(&input.task_type)
-        {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let res = self.coordinator.episodic.query_tool_performance(&input.task_type, &scope);
+        if let Ok(ref records) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for r in records {
+                let _ = self.coordinator.episodic.log_access(&r.tool_name, "episodic", &accessed_by);
+            }
+        }
+        match res {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -518,6 +669,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<StoreSharedMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let timestamp = chrono::Utc::now().to_rfc3339();
         let item = SharedMemoryItem {
             key: input.key,
@@ -528,7 +680,7 @@ impl MemoryServer {
             timestamp,
         };
 
-        match self.coordinator.shared.store_shared_memory(item) {
+        match self.coordinator.shared.store_shared_memory(item, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Shared team memory stored successfully",
             )])),
@@ -543,8 +695,30 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RetrieveSharedMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id_scope);
         let agent_id = input.agent_id.unwrap_or_default();
-        match self.coordinator.shared.retrieve_shared_memory(&agent_id) {
+        let res = self.coordinator.shared.retrieve_shared_memory(&agent_id, &scope);
+        if let Ok(ref items) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id_scope);
+            for item in items {
+                let _ = self.coordinator.episodic.log_access(&item.key, "shared", &accessed_by);
+            }
+        }
+        match res {
+            Ok(res) => {
+                let text = serde_json::to_string_pretty(&res).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(description = "Get memory access statistics and record counts for all layers")]
+    async fn memory_stats(
+        &self,
+        Parameters(input): Parameters<EmptyInput>,
+    ) -> Result<CallToolResult, McpError> {
+        match self.coordinator.episodic.get_memory_stats() {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -692,6 +866,7 @@ fn traverse_and_index(
     node: Node,
     source_bytes: &[u8],
     parent_id: Option<&str>,
+    scope: &crate::layers::MemoryScope,
 ) -> Result<()> {
     let kind = node.kind();
     let mut current_id = None;
@@ -830,19 +1005,23 @@ fn traverse_and_index(
             start_line,
             end_line,
         };
-        coordinator.codebase.index_element(el)?;
+        coordinator.codebase.index_element(el, scope)?;
     }
 
     let next_parent = current_id.as_deref().or(parent_id);
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
-        traverse_and_index(coordinator, relative_path, child, source_bytes, next_parent)?;
+        traverse_and_index(coordinator, relative_path, child, source_bytes, next_parent, scope)?;
     }
 
     Ok(())
 }
 
-fn parse_and_index_file_fallback(coordinator: &MemoryCoordinator, file_path: &Path) -> Result<()> {
+fn parse_and_index_file_fallback(
+    coordinator: &MemoryCoordinator,
+    file_path: &Path,
+    scope: &crate::layers::MemoryScope,
+) -> Result<()> {
     let content = std::fs::read_to_string(file_path)?;
     let relative_path = file_path.to_string_lossy().to_string();
 
@@ -912,20 +1091,24 @@ fn parse_and_index_file_fallback(coordinator: &MemoryCoordinator, file_path: &Pa
                 start_line: line_num,
                 end_line: line_num + 5,
             };
-            coordinator.codebase.index_element(el)?;
+            coordinator.codebase.index_element(el, scope)?;
         }
     }
     Ok(())
 }
 
-fn parse_and_index_file(coordinator: &MemoryCoordinator, file_path: &Path) -> Result<()> {
+fn parse_and_index_file(
+    coordinator: &MemoryCoordinator,
+    file_path: &Path,
+    scope: &crate::layers::MemoryScope,
+) -> Result<()> {
     let ext = file_path
         .extension()
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
     if ext != "rs" && ext != "py" && ext != "js" && ext != "jsx" && ext != "ts" && ext != "tsx" {
-        return parse_and_index_file_fallback(coordinator, file_path);
+        return parse_and_index_file_fallback(coordinator, file_path, scope);
     }
 
     let content = std::fs::read_to_string(file_path)?;
@@ -950,7 +1133,7 @@ fn parse_and_index_file(coordinator: &MemoryCoordinator, file_path: &Path) -> Re
             parser.set_language(&tree_sitter_typescript::LANGUAGE_TSX.into())?;
         }
         _ => {
-            return parse_and_index_file_fallback(coordinator, file_path);
+            return parse_and_index_file_fallback(coordinator, file_path, scope);
         }
     }
 
@@ -961,13 +1144,18 @@ fn parse_and_index_file(coordinator: &MemoryCoordinator, file_path: &Path) -> Re
             tree.root_node(),
             source_bytes,
             None,
+            scope,
         )?;
     }
 
     Ok(())
 }
 
-fn scan_directory(coordinator: &MemoryCoordinator, dir: &Path) -> Result<i64> {
+fn scan_directory(
+    coordinator: &MemoryCoordinator,
+    dir: &Path,
+    scope: &crate::layers::MemoryScope,
+) -> Result<i64> {
     let mut count = 0;
     if dir.is_dir() {
         for entry in std::fs::read_dir(dir)? {
@@ -980,7 +1168,7 @@ fn scan_directory(coordinator: &MemoryCoordinator, dir: &Path) -> Result<i64> {
                     && name != "external"
                     && name != "node_modules"
                 {
-                    count += scan_directory(coordinator, &path)?;
+                    count += scan_directory(coordinator, &path, scope)?;
                 }
             } else {
                 let ext = path.extension().unwrap_or_default().to_string_lossy();
@@ -992,7 +1180,7 @@ fn scan_directory(coordinator: &MemoryCoordinator, dir: &Path) -> Result<i64> {
                     || ext == "tsx"
                     || ext == "go"
                 {
-                    if let Err(e) = parse_and_index_file(coordinator, &path) {
+                    if let Err(e) = parse_and_index_file(coordinator, &path, scope) {
                         log::error!("Failed to index file {:?}: {}", path, e);
                     } else {
                         count += 1;
@@ -1163,11 +1351,13 @@ pub async fn run_grpc_server(
 mod tests {
     use super::*;
     use std::fs;
+    use crate::layers::MemoryScope;
 
     #[test]
     fn test_js_ts_indexing() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_mem_{}.db", uuid::Uuid::new_v4()));
         let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let scope = MemoryScope::default();
 
         // 1. JS file setup
         let js_path = std::env::temp_dir().join(format!("test_{}.js", uuid::Uuid::new_v4()));
@@ -1207,16 +1397,16 @@ class MyTSClass {
         fs::write(&ts_path, ts_content)?;
 
         // Run parser
-        parse_and_index_file(&coordinator, &js_path)?;
-        parse_and_index_file(&coordinator, &ts_path)?;
+        parse_and_index_file(&coordinator, &js_path, &scope)?;
+        parse_and_index_file(&coordinator, &ts_path, &scope)?;
 
         // Query indexed elements
         let js_elements = coordinator
             .codebase
-            .query_elements(js_path.to_str().unwrap(), "")?;
+            .query_elements(js_path.to_str().unwrap(), "", &scope)?;
         let ts_elements = coordinator
             .codebase
-            .query_elements(ts_path.to_str().unwrap(), "")?;
+            .query_elements(ts_path.to_str().unwrap(), "", &scope)?;
 
         // Cleanup temp files
         let _ = fs::remove_file(&js_path);
@@ -1283,24 +1473,25 @@ class MyTSClass {
     fn test_fts_search() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_fts_{}.db", uuid::Uuid::new_v4()));
         let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let scope = MemoryScope::default();
 
         // 1. Add facts to semantic memory
-        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8)?;
-        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9)?;
-        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7)?;
+        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8, &scope)?;
+        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9, &scope)?;
+        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7, &scope)?;
 
         // 2. Perform FTS query for "systems programming"
-        let res_1 = coordinator.semantic.search_text("systems programming", 10)?;
+        let res_1 = coordinator.semantic.search_text("systems programming", 10, &scope)?;
         assert_eq!(res_1.len(), 1);
         assert_eq!(res_1[0].node_id, "fact-1");
 
         // 3. Perform FTS query with prefix wildcard
-        let res_2 = coordinator.semantic.search_text("mcp*", 10)?;
+        let res_2 = coordinator.semantic.search_text("mcp*", 10, &scope)?;
         assert_eq!(res_2.len(), 1);
         assert_eq!(res_2[0].node_id, "fact-2");
 
         // 4. Perform FTS query for SQL
-        let res_3 = coordinator.semantic.search_text("SQL database", 10)?;
+        let res_3 = coordinator.semantic.search_text("SQL database", 10, &scope)?;
         assert_eq!(res_3.len(), 1);
         assert_eq!(res_3[0].node_id, "fact-3");
 
@@ -1313,19 +1504,20 @@ class MyTSClass {
     fn test_hybrid_search() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_hybrid_{}.db", uuid::Uuid::new_v4()));
         let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let scope = MemoryScope::default();
 
         // 1. Add facts to semantic memory
-        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8)?;
-        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9)?;
-        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7)?;
+        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8, &scope)?;
+        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9, &scope)?;
+        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7, &scope)?;
 
         // 2. Perform hybrid query for "mcp"
-        let res_1 = coordinator.semantic.query_similar_facts("mcp", 10)?;
+        let res_1 = coordinator.semantic.query_similar_facts("mcp", 10, &scope)?;
         assert!(!res_1.is_empty(), "Should return results");
         assert_eq!(res_1[0].node_id, "fact-2");
 
         // 3. Perform hybrid query for "SQL database"
-        let res_2 = coordinator.semantic.query_similar_facts("SQL database", 10)?;
+        let res_2 = coordinator.semantic.query_similar_facts("SQL database", 10, &scope)?;
         assert!(!res_2.is_empty(), "Should return results");
         assert_eq!(res_2[0].node_id, "fact-3");
 
