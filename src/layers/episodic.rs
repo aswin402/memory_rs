@@ -55,7 +55,7 @@ pub struct MemoryStats {
 }
 
 pub struct EpisodicMemory {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
 }
 
 impl EpisodicMemory {

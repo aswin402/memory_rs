@@ -324,6 +324,19 @@ pub struct DetectAndResolveConflictsInput {
     pub agent_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactMemoriesInput {
+    pub strategy: Option<String>,
+    pub dry_run: Option<bool>,
+    pub min_importance: Option<f64>,
+    pub max_age_hours: Option<f64>,
+    pub cluster_threshold: Option<f64>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
 fn get_scope(
     user_id: &Option<String>,
     session_id: &Option<String>,
@@ -1071,6 +1084,37 @@ impl MemoryServer {
     }
 
     #[tool(
+        description = "Compact memories using decay-based archival and cluster consolidation"
+    )]
+    async fn compact_memories(
+        &self,
+        Parameters(input): Parameters<CompactMemoriesInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let strategy = input.strategy.unwrap_or_else(|| "both".to_string());
+        let dry_run = input.dry_run.unwrap_or(false);
+        let min_importance = input.min_importance.unwrap_or(0.15);
+        let max_age_hours = input.max_age_hours.unwrap_or(24.0);
+        let cluster_threshold = input.cluster_threshold.unwrap_or(0.75);
+
+        match crate::consolidation::compactor::MemoryCompactor::run_compaction(
+            &self.coordinator,
+            &strategy,
+            dry_run,
+            min_importance,
+            max_age_hours,
+            cluster_threshold,
+            &scope,
+        ) {
+            Ok(report) => {
+                let text = serde_json::to_string_pretty(&report).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
         description = "Set an ephemeral key-value pair in working memory, with an optional TTL (seconds)"
     )]
     async fn set_working_memory(
@@ -1731,6 +1775,7 @@ mod tests {
     use super::*;
     use std::fs;
     use crate::layers::MemoryScope;
+    use rusqlite::params;
 
     #[test]
     fn test_js_ts_indexing() -> Result<()> {
@@ -2223,6 +2268,51 @@ class MyTSClass {
         let graph_kg = coordinator.graph.read_graph(&scope)?;
         assert_eq!(graph_kg.relations.len(), 1);
         assert_eq!(graph_kg.relations[0].to, "LA");
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_compaction_tool() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_compaction_tool_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // 1. Add decaying facts
+        coordinator.semantic.add_fact("fact-1", "I hate vegetables", 0.01, &scope)?;
+        coordinator.semantic.add_fact("fact-2", "I love clean coding", 0.9, &scope)?;
+
+        // 2. Add highly similar facts for clustering
+        coordinator.semantic.add_fact("fact-3", "Aswin is a Rust engineer", 0.8, &scope)?;
+        coordinator.semantic.add_fact("fact-4", "Aswin works with Rust code", 0.8, &scope)?;
+
+        // Set fact-1 to be very old
+        {
+            let conn = coordinator.semantic.conn.lock();
+            let old_time = (chrono::Utc::now() - chrono::Duration::hours(48)).to_rfc3339();
+            conn.execute("UPDATE semantic_metadata SET timestamp = ?1 WHERE node_id = 'fact-1'", params![old_time])?;
+        }
+
+        // Run compaction tool
+        let input = CompactMemoriesInput {
+            strategy: Some("both".to_string()),
+            dry_run: Some(false),
+            min_importance: Some(0.15),
+            max_age_hours: Some(24.0),
+            cluster_threshold: Some(0.75),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+
+        let res = server.compact_memories(Parameters(input)).await?;
+        let val = serde_json::to_value(&res)?;
+        let text = val["content"][0]["text"].as_str().unwrap();
+
+        assert!(text.contains("removedCount"), "Response should contain compaction report metrics");
+        assert!(text.contains("mergedCount"), "Response should contain compaction report metrics");
 
         let _ = std::fs::remove_file(db_path);
         Ok(())

@@ -241,6 +241,28 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert!(conflict_resp.error_json.is_empty(), "Should not return error");
     println!("Conflict Tool Response: {}", conflict_resp.result_json);
 
+    // 10. Test compact_memories via gRPC
+    println!("Calling compact_memories via gRPC...");
+    let compact_params = serde_json::json!({
+        "name": "compact_memories",
+        "arguments": {
+            "strategy": "both",
+            "dryRun": true,
+            "minImportance": 0.15,
+            "maxAgeHours": 24.0,
+            "clusterThreshold": 0.75
+        }
+    });
+    let compact_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: compact_params.to_string(),
+        id: 9,
+        has_id: true,
+    };
+    let compact_resp = client.call(compact_req).await?.into_inner();
+    assert!(compact_resp.error_json.is_empty(), "Should not return error");
+    println!("Compaction Tool Response: {}", compact_resp.result_json);
+
     // Kill the server process
     child.kill()?;
 
