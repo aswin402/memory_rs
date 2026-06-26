@@ -40,7 +40,7 @@ pub struct KnowledgeGraph {
 }
 
 pub struct GraphMemory {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
 }
 
 impl GraphMemory {

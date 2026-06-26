@@ -18,7 +18,7 @@ pub struct SemanticFact {
 }
 
 pub struct SemanticMemory {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
     model: Mutex<TextEmbedding>,
     hnsw_index: Mutex<World>,
 }
