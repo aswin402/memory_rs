@@ -5,6 +5,9 @@ pub mod semantic;
 pub mod shared;
 pub mod working;
 
+pub use graph::GraphMemory;
+pub use semantic::SemanticMemory;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryScope {
