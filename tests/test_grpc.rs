@@ -7,7 +7,7 @@ pub mod mcp_grpc {
 }
 
 use mcp_grpc::mcp_service_client::McpServiceClient;
-use mcp_grpc::{McpRequest, McpResponse};
+use mcp_grpc::McpRequest;
 
 #[tokio::test]
 async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
@@ -165,6 +165,62 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
         "Branch file must be deleted"
     );
     println!("✓ Branch file was deleted from disk.");
+
+    // 6. Test query_as_of via gRPC
+    println!("Querying as_of via gRPC...");
+    let query_params = serde_json::json!({
+        "name": "query_as_of",
+        "arguments": {
+            "asOf": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        }
+    });
+    let query_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: query_params.to_string(),
+        id: 5,
+        has_id: true,
+    };
+    let query_resp = client.call(query_req).await?.into_inner();
+    if !query_resp.error_json.is_empty() {
+        panic!("Query as of failed: {}", query_resp.error_json);
+    }
+    println!("Query As Of Response: {}", query_resp.result_json);
+
+    // 7. Test query_fact_history via gRPC
+    println!("Querying fact history via gRPC...");
+    let hist_params = serde_json::json!({
+        "name": "query_fact_history",
+        "arguments": {
+            "entityName": "A"
+        }
+    });
+    let hist_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: hist_params.to_string(),
+        id: 6,
+        has_id: true,
+    };
+    let hist_resp = client.call(hist_req).await?.into_inner();
+    assert!(hist_resp.error_json.is_empty(), "Should not return error");
+    println!("Query Fact History Response: {}", hist_resp.result_json);
+
+    // 8. Test invalidate_fact via gRPC
+    println!("Invalidating fact via gRPC...");
+    let invalidate_params = serde_json::json!({
+        "name": "invalidate_fact",
+        "arguments": {
+            "factId": "fact-1"
+        }
+    });
+    let invalidate_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: invalidate_params.to_string(),
+        id: 7,
+        has_id: true,
+    };
+    let invalidate_resp = client.call(invalidate_req).await?.into_inner();
+    assert!(invalidate_resp.error_json.is_empty(), "Should not return error");
+    println!("Invalidate Fact Response: {}", invalidate_resp.result_json);
 
     // Kill the server process
     child.kill()?;

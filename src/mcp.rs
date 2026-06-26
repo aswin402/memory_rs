@@ -235,6 +235,37 @@ pub struct BranchIdInput {
     pub branch_id: String,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct InvalidateFactInput {
+    pub fact_id: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub relation_type: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryFactHistoryInput {
+    pub entity_name: String,
+    pub relation_type: Option<String>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryAsOfInput {
+    pub as_of: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
 fn get_scope(
     user_id: &Option<String>,
     session_id: &Option<String>,
@@ -716,7 +747,7 @@ impl MemoryServer {
     #[tool(description = "Get memory access statistics and record counts for all layers")]
     async fn memory_stats(
         &self,
-        Parameters(input): Parameters<EmptyInput>,
+        Parameters(_input): Parameters<EmptyInput>,
     ) -> Result<CallToolResult, McpError> {
         match self.coordinator.episodic.get_memory_stats() {
             Ok(res) => {
@@ -814,6 +845,113 @@ impl MemoryServer {
                 "Successfully rolled back database branch",
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Invalidate a semantic fact by ID or a graph relation by from/to/relationType"
+    )]
+    async fn invalidate_fact(
+        &self,
+        Parameters(input): Parameters<InvalidateFactInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        let mut invalidated_any = false;
+        let mut messages = Vec::new();
+
+        if let Some(ref fact_id) = input.fact_id {
+            match self.coordinator.semantic.invalidate_fact(fact_id, &scope) {
+                Ok(_) => {
+                    let _ = self.coordinator.episodic.log_access(fact_id, "semantic", &accessed_by);
+                    invalidated_any = true;
+                    messages.push(format!("Semantic fact '{}' invalidated successfully", fact_id));
+                }
+                Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+            }
+        }
+
+        if let (Some(from), Some(to), Some(rel_type)) = (input.from.as_ref(), input.to.as_ref(), input.relation_type.as_ref()) {
+            match self.coordinator.graph.invalidate_edge(from, to, rel_type, &scope) {
+                Ok(_) => {
+                    let edge_desc = format!("{}->{} ({})", from, to, rel_type);
+                    let _ = self.coordinator.episodic.log_access(&edge_desc, "graph", &accessed_by);
+                    invalidated_any = true;
+                    messages.push(format!("Graph relation '{}' invalidated successfully", edge_desc));
+                }
+                Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+            }
+        }
+
+        if !invalidated_any {
+            return Err(McpError::invalid_params(
+                "Either factId or all of (from, to, relationType) must be provided to invalidate_fact",
+                None,
+            ));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(messages.join("\n"))]))
+    }
+
+    #[tool(
+        description = "Query the chronological history of relations/facts involving a specific entity"
+    )]
+    async fn query_fact_history(
+        &self,
+        Parameters(input): Parameters<QueryFactHistoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        match self.coordinator.graph.query_fact_history(&input.entity_name, input.relation_type.clone(), &scope) {
+            Ok(history) => {
+                for item in &history {
+                    let edge_desc = format!("{}->{} ({})", item.from, item.to, item.relation_type);
+                    let _ = self.coordinator.episodic.log_access(&edge_desc, "graph", &accessed_by);
+                }
+                let text = serde_json::to_string_pretty(&history).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Query both Graph and Semantic memory states as of a specific point in time (ISO 8601 datetime)"
+    )]
+    async fn query_as_of(
+        &self,
+        Parameters(input): Parameters<QueryAsOfInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        let graph_res = self.coordinator.graph.query_as_of(&input.as_of, &scope);
+        let semantic_res = self.coordinator.semantic.query_as_of(&input.as_of, &scope);
+
+        if let Ok(ref graph) = graph_res {
+            for entity in &graph.entities {
+                let _ = self.coordinator.episodic.log_access(&entity.name, "graph", &accessed_by);
+            }
+        }
+        if let Ok(ref facts) = semantic_res {
+            for f in facts {
+                let _ = self.coordinator.episodic.log_access(&f.node_id, "semantic", &accessed_by);
+            }
+        }
+
+        match (graph_res, semantic_res) {
+            (Ok(graph), Ok(semantic_facts)) => {
+                let combined = serde_json::json!({
+                    "graph": graph,
+                    "semantic": semantic_facts,
+                });
+                let text = serde_json::to_string_pretty(&combined).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            (Err(e), _) => Err(McpError::internal_error(e.to_string(), None)),
+            (_, Err(e)) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 }
@@ -1522,6 +1660,100 @@ class MyTSClass {
         assert_eq!(res_2[0].node_id, "fact-3");
 
         // 4. Cleanup DB
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_temporal_mcp_tools() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap())?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // 1. Seed semantic facts
+        coordinator.semantic.add_fact("fact-1", "Rust 2024 is awesome", 0.9, &scope)?;
+
+        // Seed graph entities & relation
+        coordinator.graph.create_entities(vec![
+            Entity {
+                name: "A".to_string(),
+                entity_type: "Person".to_string(),
+                observations: vec!["Lives in NY".to_string()],
+            },
+            Entity {
+                name: "B".to_string(),
+                entity_type: "Person".to_string(),
+                observations: vec!["Lives in LA".to_string()],
+            },
+        ], &scope)?;
+
+        coordinator.graph.create_relations(vec![
+            Relation {
+                from: "A".to_string(),
+                to: "B".to_string(),
+                relation_type: "friend".to_string(),
+            }
+        ], &scope)?;
+
+        // Now test query_as_of (currently both should be valid)
+        let as_of_now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+        let query_as_of_input = QueryAsOfInput {
+            as_of: as_of_now.clone(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res = server.query_as_of(Parameters(query_as_of_input)).await?;
+        let val = serde_json::to_value(&res)?;
+        let content_text = val["content"][0]["text"].as_str().unwrap();
+        assert!(content_text.contains("fact-1"));
+        assert!(content_text.contains("friend"));
+
+        // Test query_fact_history
+        let query_hist_input = QueryFactHistoryInput {
+            entity_name: "A".to_string(),
+            relation_type: Some("friend".to_string()),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let hist_res = server.query_fact_history(Parameters(query_hist_input)).await?;
+        let hist_val = serde_json::to_value(&hist_res)?;
+        let hist_text = hist_val["content"][0]["text"].as_str().unwrap();
+        assert!(hist_text.contains("friend"));
+
+        // Test invalidate_fact (both semantic and graph relation)
+        let invalidate_input = InvalidateFactInput {
+            fact_id: Some("fact-1".to_string()),
+            from: Some("A".to_string()),
+            to: Some("B".to_string()),
+            relation_type: Some("friend".to_string()),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let inv_res = server.invalidate_fact(Parameters(invalidate_input)).await?;
+        let inv_val = serde_json::to_value(&inv_res)?;
+        let inv_text = inv_val["content"][0]["text"].as_str().unwrap();
+        assert!(inv_text.contains("invalidated successfully"));
+
+        // Verify invalidation via query_as_of with a future time
+        let future_time = (chrono::Utc::now() + chrono::Duration::seconds(5)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let query_as_of_future = QueryAsOfInput {
+            as_of: future_time,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_future = server.query_as_of(Parameters(query_as_of_future)).await?;
+        let val_future = serde_json::to_value(&res_future)?;
+        let content_future = val_future["content"][0]["text"].as_str().unwrap();
+        assert!(!content_future.contains("fact-1"));
+        assert!(!content_future.contains("friend"));
+
+        // Cleanup
         let _ = std::fs::remove_file(db_path);
         Ok(())
     }

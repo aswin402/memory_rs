@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-06-26
+
+### Added
+- **Bi-temporal Fact Model**: Introduced bi-temporal metadata columns (`valid_from`, `valid_until`, `superseded_by`, and `confidence`) in `graph_edges` and `semantic_metadata` tables.
+- **Temporal Query Functions**: Implemented `invalidate_edge`, `query_fact_history`, and `query_as_of` layers logic to inspect memory engine states at arbitrary historical timestamps.
+- **New MCP Tools**: Exposed `invalidate_fact`, `query_fact_history`, and `query_as_of` JSON-RPC tools to let AI agents query/manipulate temporal facts.
+- **gRPC Temporal Testing**: Added full gRPC integration tests verifying temporal operations over Tonic protocol.
+
+### Fixed
+- **SQLite ISO 8601 string sorting precision trap**: Fixed test queries by formatting UTC timestamps to a strict 20-character format `%Y-%m-%dT%H:%M:%SZ` matching SQLite's `strftime` format.
+- **Unused variable warning**: Cleaned up the unused variable warning in `memory_stats` input.
+
 ## [0.1.3] - 2026-06-26
 
 ### Added
