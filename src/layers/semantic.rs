@@ -428,6 +428,50 @@ impl SemanticMemory {
         Ok(())
     }
 
+    pub fn invalidate_fact(&self, node_id: &str, scope: &crate::layers::MemoryScope) -> Result<()> {
+        let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
+        conn.execute(
+            "UPDATE semantic_metadata SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') 
+             WHERE node_id = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4 AND valid_until IS NULL",
+            params![node_id, user_id, session_id, agent_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn query_as_of(&self, as_of: &str, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT node_id, raw_text, timestamp, importance 
+             FROM semantic_metadata 
+             WHERE valid_from <= ?1 
+               AND (valid_until IS NULL OR valid_until > ?1)
+               AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
+               AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
+               AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
+        )?;
+        let mut rows = stmt.query(params![
+            as_of,
+            scope.user_id,
+            scope.session_id,
+            scope.agent_id
+        ])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            results.push(SemanticFact {
+                node_id: row.get(0)?,
+                raw_text: row.get(1)?,
+                similarity: 1.0, // Placeholder similarity
+                timestamp: row.get(2)?,
+                importance: row.get(3)?,
+            });
+        }
+        Ok(results)
+    }
+
     pub fn checkpoint(&self) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
@@ -560,6 +604,51 @@ mod tests {
         // HNSW index is now rebuilt. Let's do a vector search directly (which queries the HNSW index first)
         let res_vector = semantic.query_similar_facts_vector("Rust", 10, &scope)?;
         assert!(res_vector.is_empty(), "Rebuilt HNSW index should exclude inactive facts");
+
+        // Cleanup
+        let _ = fs::remove_file(&db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_semantic_history_and_temporal_queries() -> Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!("test_semantic_history_temporal_{}.db", uuid::Uuid::new_v4()));
+        if db_path.exists() {
+            let _ = fs::remove_file(&db_path);
+        }
+
+        let semantic = SemanticMemory::new(&db_path)?;
+        let scope = MemoryScope::default();
+
+        let before_creation = chrono::Utc::now().to_rfc3339();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // 1. Add a fact
+        semantic.add_fact("fact-1", "Rust is safe and fast", 0.9, &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let after_creation = chrono::Utc::now().to_rfc3339();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // 2. Invalidate the fact using the new invalidate_fact method
+        semantic.invalidate_fact("fact-1", &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let after_invalidation = chrono::Utc::now().to_rfc3339();
+
+        // 3. Test query_as_of before creation (should return 0 facts)
+        let facts_before = semantic.query_as_of(&before_creation, &scope)?;
+        assert_eq!(facts_before.len(), 0);
+
+        // 4. Test query_as_of after creation (should return 1 fact)
+        let facts_after = semantic.query_as_of(&after_creation, &scope)?;
+        assert_eq!(facts_after.len(), 1);
+        assert_eq!(facts_after[0].node_id, "fact-1");
+
+        // 5. Test query_as_of after invalidation (should return 0 facts)
+        let facts_final = semantic.query_as_of(&after_invalidation, &scope)?;
+        assert_eq!(facts_final.len(), 0);
 
         // Cleanup
         let _ = fs::remove_file(&db_path);

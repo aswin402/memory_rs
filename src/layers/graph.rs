@@ -21,6 +21,18 @@ pub struct Relation {
     pub relation_type: String,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationHistoryItem {
+    pub from: String,
+    pub to: String,
+    pub relation_type: String,
+    pub valid_from: String,
+    pub valid_until: Option<String>,
+    pub superseded_by: Option<String>,
+    pub confidence: f64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KnowledgeGraph {
     pub entities: Vec<Entity>,
@@ -451,6 +463,96 @@ impl GraphMemory {
         Ok(())
     }
 
+    pub fn invalidate_edge(&self, from_name: &str, to_name: &str, relation_type: &str, scope: &crate::layers::MemoryScope) -> Result<()> {
+        let conn = self.conn.lock();
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
+        conn.execute(
+            "UPDATE graph_edges SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') 
+             WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6 AND valid_until IS NULL",
+            params![from_name, to_name, relation_type, user_id, session_id, agent_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn query_fact_history(
+        &self,
+        entity_name: &str,
+        relation_type: Option<String>,
+        scope: &crate::layers::MemoryScope,
+    ) -> Result<Vec<RelationHistoryItem>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT from_name, to_name, relation_type, valid_from, valid_until, superseded_by, confidence
+             FROM graph_edges
+             WHERE (from_name = ?1 OR to_name = ?1)
+               AND (?2 IS NULL OR relation_type = ?2)
+               AND (?3 IS NULL OR user_id = ?3 OR user_id = '*')
+               AND (?4 IS NULL OR session_id = ?4 OR session_id = '*')
+               AND (?5 IS NULL OR agent_id = ?5 OR agent_id = '*')
+             ORDER BY valid_from ASC"
+        )?;
+        let mut rows = stmt.query(params![
+            entity_name,
+            relation_type,
+            scope.user_id,
+            scope.session_id,
+            scope.agent_id,
+        ])?;
+        let mut history = Vec::new();
+        while let Some(row) = rows.next()? {
+            history.push(RelationHistoryItem {
+                from: row.get(0)?,
+                to: row.get(1)?,
+                relation_type: row.get(2)?,
+                valid_from: row.get(3)?,
+                valid_until: row.get(4)?,
+                superseded_by: row.get(5)?,
+                confidence: row.get(6)?,
+            });
+        }
+        Ok(history)
+    }
+
+    pub fn query_as_of(&self, as_of: &str, scope: &crate::layers::MemoryScope) -> Result<KnowledgeGraph> {
+        let conn = self.conn.lock();
+
+        let mut stmt_nodes =
+            conn.prepare("SELECT name, entity_type, observations FROM graph_nodes WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')")?;
+        let mut node_rows = stmt_nodes.query(params![scope.user_id, scope.session_id, scope.agent_id])?;
+        let mut entities = Vec::new();
+        while let Some(row) = node_rows.next()? {
+            let name: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let obs_json: String = row.get(2)?;
+            let observations: Vec<String> = serde_json::from_str(&obs_json)?;
+            entities.push(Entity {
+                name,
+                entity_type,
+                observations,
+            });
+        }
+
+        let mut stmt_edges =
+            conn.prepare("SELECT from_name, to_name, relation_type FROM graph_edges WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*') AND valid_from <= ?4 AND (valid_until IS NULL OR valid_until > ?4)")?;
+        let mut edge_rows = stmt_edges.query(params![scope.user_id, scope.session_id, scope.agent_id, as_of])?;
+        let mut relations = Vec::new();
+        while let Some(row) = edge_rows.next()? {
+            relations.push(Relation {
+                from: row.get(0)?,
+                to: row.get(1)?,
+                relation_type: row.get(2)?,
+            });
+        }
+
+        Ok(KnowledgeGraph {
+            entities,
+            relations,
+        })
+    }
+
     pub fn checkpoint(&self) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
@@ -562,6 +664,81 @@ mod tests {
             |r| r.get(0)
         )?;
         assert_eq!(confidence, 1.0);
+
+        // Cleanup
+        let _ = fs::remove_file(&db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_graph_history_and_temporal_queries() -> Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_graph_history_temporal.db");
+        if db_path.exists() {
+            let _ = fs::remove_file(&db_path);
+        }
+
+        let graph = GraphMemory::new(&db_path)?;
+        let scope = MemoryScope {
+            user_id: Some("test_user".to_string()),
+            session_id: Some("test_session".to_string()),
+            agent_id: Some("test_agent".to_string()),
+        };
+
+        // 1. Create entities
+        let entity_a = Entity {
+            name: "A".to_string(),
+            entity_type: "Person".to_string(),
+            observations: vec!["Obs 1".to_string()],
+        };
+        let entity_b = Entity {
+            name: "B".to_string(),
+            entity_type: "Person".to_string(),
+            observations: vec!["Obs 2".to_string()],
+        };
+        graph.create_entities(vec![entity_a, entity_b], &scope)?;
+
+        // Capture a timestamp before adding relation
+        let before_creation = chrono::Utc::now().to_rfc3339();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // 2. Create a relation
+        let rel = Relation {
+            from: "A".to_string(),
+            to: "B".to_string(),
+            relation_type: "colleagues".to_string(),
+        };
+        graph.create_relations(vec![rel.clone()], &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let after_creation = chrono::Utc::now().to_rfc3339();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // 3. Invalidate/Delete the relation via invalidate_edge
+        graph.invalidate_edge("A", "B", "colleagues", &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let after_invalidation = chrono::Utc::now().to_rfc3339();
+
+        // Check history
+        let history = graph.query_fact_history("A", Some("colleagues".to_string()), &scope)?;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].from, "A");
+        assert_eq!(history[0].to, "B");
+        assert!(history[0].valid_until.is_some());
+
+        // Check query_as_of before creation -> should have no relations
+        let kg_before = graph.query_as_of(&before_creation, &scope)?;
+        assert_eq!(kg_before.relations.len(), 0);
+
+        // Check query_as_of after creation -> should have 1 relation
+        let kg_after = graph.query_as_of(&after_creation, &scope)?;
+        assert_eq!(kg_after.relations.len(), 1);
+        assert_eq!(kg_after.relations[0].from, "A");
+
+        // Check query_as_of after invalidation -> should have 0 relations
+        let kg_final = graph.query_as_of(&after_invalidation, &scope)?;
+        assert_eq!(kg_final.relations.len(), 0);
 
         // Cleanup
         let _ = fs::remove_file(&db_path);
