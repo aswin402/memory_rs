@@ -54,7 +54,11 @@ impl GraphMemory {
                 user_id TEXT NOT NULL DEFAULT '*',
                 session_id TEXT NOT NULL DEFAULT '*',
                 agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id)
+                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                valid_until TEXT,
+                superseded_by TEXT,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id, valid_from)
             );
             CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
         )?;
@@ -68,6 +72,10 @@ impl GraphMemory {
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_until TEXT", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN superseded_by TEXT", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0", []);
         let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
 
         Ok(Self {
@@ -413,7 +421,11 @@ impl GraphMemory {
                 user_id TEXT NOT NULL DEFAULT '*',
                 session_id TEXT NOT NULL DEFAULT '*',
                 agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id)
+                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                valid_until TEXT,
+                superseded_by TEXT,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id, valid_from)
             );
             CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
         )?;
@@ -427,6 +439,10 @@ impl GraphMemory {
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
         let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_until TEXT", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN superseded_by TEXT", []);
+        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0", []);
         let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
 
         *self.conn.lock() = conn;
