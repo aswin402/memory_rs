@@ -266,6 +266,17 @@ pub struct QueryAsOfInput {
     pub agent_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectAndResolveConflictsInput {
+    pub strategy: Option<String>,
+    pub dry_run: Option<bool>,
+    pub semantic_threshold: Option<f64>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
 fn get_scope(
     user_id: &Option<String>,
     session_id: &Option<String>,
@@ -952,6 +963,44 @@ impl MemoryServer {
             }
             (Err(e), _) => Err(McpError::internal_error(e.to_string(), None)),
             (_, Err(e)) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Detect and resolve contradictions or conflicts in graph relations and semantic memories"
+    )]
+    async fn detect_and_resolve_conflicts(
+        &self,
+        Parameters(input): Parameters<DetectAndResolveConflictsInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let dry_run = input.dry_run.unwrap_or(true);
+        let strategy = input.strategy.unwrap_or_else(|| "recency".to_string());
+        let semantic_threshold = input.semantic_threshold.unwrap_or(0.85);
+
+        let exclusive_relations = vec![
+            "lives_in".to_string(),
+            "current_job".to_string(),
+            "spouse".to_string(),
+            "has_status".to_string(),
+            "is_born_in".to_string(),
+            "located_in".to_string(),
+        ];
+
+        match crate::search::conflict::ConflictResolver::run(
+            &self.coordinator.graph,
+            &self.coordinator.semantic,
+            &exclusive_relations,
+            semantic_threshold,
+            &strategy,
+            dry_run,
+            &scope,
+        ) {
+            Ok(report) => {
+                let text = serde_json::to_string_pretty(&report).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 }
@@ -1754,6 +1803,65 @@ class MyTSClass {
         assert!(!content_future.contains("friend"));
 
         // Cleanup
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_conflict_tool() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_conflict_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap())?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // Seed conflicting status
+        coordinator.graph.create_entities(vec![
+            Entity {
+                name: "Alice".to_string(),
+                entity_type: "Person".to_string(),
+                observations: vec![],
+            },
+            Entity {
+                name: "Single".to_string(),
+                entity_type: "Status".to_string(),
+                observations: vec![],
+            },
+            Entity {
+                name: "Married".to_string(),
+                entity_type: "Status".to_string(),
+                observations: vec![],
+            },
+        ], &scope)?;
+
+        coordinator.graph.create_relations(vec![Relation {
+            from: "Alice".to_string(),
+            to: "Single".to_string(),
+            relation_type: "has_status".to_string(),
+        }], &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        coordinator.graph.create_relations(vec![Relation {
+            from: "Alice".to_string(),
+            to: "Married".to_string(),
+            relation_type: "has_status".to_string(),
+        }], &scope)?;
+
+        // Call conflict tool
+        let input = DetectAndResolveConflictsInput {
+            strategy: Some("recency".to_string()),
+            dry_run: Some(false),
+            semantic_threshold: None,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res = server.detect_and_resolve_conflicts(Parameters(input)).await?;
+        let val = serde_json::to_value(&res)?;
+        let content = val["content"][0]["text"].as_str().unwrap();
+        assert!(content.contains("\"conflictsFound\": 1"));
+        assert!(content.contains("\"resolved\": true"));
+
         let _ = std::fs::remove_file(db_path);
         Ok(())
     }
