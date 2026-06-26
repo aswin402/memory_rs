@@ -442,18 +442,25 @@ impl SemanticMemory {
         Ok(())
     }
 
-    pub fn invalidate_fact(&self, node_id: &str, scope: &crate::layers::MemoryScope) -> Result<()> {
+    pub fn invalidate_fact(&self, node_id: &str, scope: &crate::layers::MemoryScope) -> Result<bool> {
         let conn = self.conn.lock();
         let user_id = scope.user_id.as_deref().unwrap_or("*");
         let session_id = scope.session_id.as_deref().unwrap_or("*");
         let agent_id = scope.agent_id.as_deref().unwrap_or("*");
 
-        conn.execute(
+        let rows_updated = conn.execute(
             "UPDATE semantic_metadata SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') 
              WHERE node_id = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4 AND valid_until IS NULL",
             params![node_id, user_id, session_id, agent_id],
         )?;
-        Ok(())
+
+        let updated = rows_updated > 0;
+        if updated {
+            let dimensions = 384;
+            let world = rebuild_hnsw_index(&conn, dimensions)?;
+            *self.hnsw_index.lock() = world;
+        }
+        Ok(updated)
     }
 
     pub fn query_as_of(&self, as_of: &str, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
@@ -545,7 +552,7 @@ fn get_or_create_mapping_id(conn: &Connection, node_id: &str) -> Result<u32> {
     }
 }
 
-fn calculate_cosine_similarity(v1: &[f32], v2: &[f32]) -> f64 {
+pub(crate) fn calculate_cosine_similarity(v1: &[f32], v2: &[f32]) -> f64 {
     if v1.len() != v2.len() || v1.is_empty() {
         return 0.0;
     }

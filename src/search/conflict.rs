@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use schemars::JsonSchema;
 use crate::layers::{GraphMemory, SemanticMemory, MemoryScope};
-use crate::layers::semantic::rebuild_hnsw_index;
+use crate::layers::semantic::{rebuild_hnsw_index, calculate_cosine_similarity};
 use anyhow::Result;
 use rusqlite::params;
 
@@ -46,6 +46,7 @@ pub struct ResolutionAction {
 #[serde(rename_all = "camelCase")]
 pub struct ConflictResolutionReport {
     pub conflicts_found: usize,
+    pub conflicts: Vec<ConflictPair>,
     pub resolutions_applied: Vec<ResolutionAction>,
     pub dry_run: bool,
 }
@@ -63,6 +64,7 @@ impl ConflictResolver {
         scope: &MemoryScope,
     ) -> Result<ConflictResolutionReport> {
         let mut conflicts_found = 0;
+        let mut conflicts = Vec::new();
         let mut resolutions_applied = Vec::new();
 
         // 1. Graph Conflicts
@@ -77,12 +79,15 @@ impl ConflictResolver {
             relation_type: String,
             valid_from: String,
             confidence: f64,
+            user_id: String,
+            session_id: String,
+            agent_id: String,
         }
 
         let mut edges = Vec::new();
         {
             let mut stmt = conn_g.prepare(
-                "SELECT from_name, to_name, relation_type, valid_from, confidence 
+                "SELECT from_name, to_name, relation_type, valid_from, confidence, user_id, session_id, agent_id 
                  FROM graph_edges 
                  WHERE valid_until IS NULL 
                    AND (user_id = ?1 OR user_id = '*')
@@ -97,6 +102,9 @@ impl ConflictResolver {
                     relation_type: row.get(2)?,
                     valid_from: row.get(3)?,
                     confidence: row.get(4)?,
+                    user_id: row.get(5)?,
+                    session_id: row.get(6)?,
+                    agent_id: row.get(7)?,
                 });
             }
         }
@@ -140,6 +148,29 @@ impl ConflictResolver {
                                 }
                             };
 
+                            let (existing, new) = if r1.valid_from <= r2.valid_from {
+                                (r1, r2)
+                            } else {
+                                (r2, r1)
+                            };
+
+                            let existing_edge_key = format!("{}-{}-{}", existing.from_name, existing.to_name, existing.relation_type);
+                            let new_edge_key = format!("{}-{}-{}", new.from_name, new.to_name, new.relation_type);
+
+                            let details = ConflictDetails::Graph {
+                                from_name: from.clone(),
+                                relation_type: rel.clone(),
+                                existing_target: existing.to_name.clone(),
+                                new_target: new.to_name.clone(),
+                                existing_edge_key,
+                                new_edge_key,
+                            };
+
+                            conflicts.push(ConflictPair {
+                                id: conflict_id.clone(),
+                                details,
+                            });
+
                             let action_taken = format!(
                                 "Resolved graph conflict for {}({}): {} (valid: {}) wins over {} (valid: {})",
                                 from, rel, winner.to_name, winner.valid_from, loser.to_name, loser.valid_from
@@ -150,8 +181,23 @@ impl ConflictResolver {
                                     "UPDATE graph_edges 
                                      SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 
                                          superseded_by = ?1 
-                                     WHERE from_name = ?2 AND to_name = ?3 AND relation_type = ?4 AND valid_from = ?5",
-                                    params![winner.to_name, loser.from_name, loser.to_name, loser.relation_type, loser.valid_from],
+                                     WHERE from_name = ?2 
+                                       AND to_name = ?3 
+                                       AND relation_type = ?4 
+                                       AND valid_from = ?5
+                                       AND user_id = ?6
+                                       AND session_id = ?7
+                                       AND agent_id = ?8",
+                                    params![
+                                        winner.to_name,
+                                        loser.from_name,
+                                        loser.to_name,
+                                        loser.relation_type,
+                                        loser.valid_from,
+                                        loser.user_id,
+                                        loser.session_id,
+                                        loser.agent_id
+                                    ],
                                 )?;
                             }
 
@@ -179,12 +225,15 @@ impl ConflictResolver {
             embedding: Vec<f32>,
             valid_from: String,
             importance: f64,
+            user_id: String,
+            session_id: String,
+            agent_id: String,
         }
 
         let mut facts = Vec::new();
         {
             let mut stmt_s = conn_s.prepare(
-                "SELECT node_id, raw_text, embedding, valid_from, importance 
+                "SELECT node_id, raw_text, embedding, valid_from, importance, user_id, session_id, agent_id 
                  FROM semantic_metadata 
                  WHERE valid_until IS NULL 
                    AND (user_id = ?1 OR user_id = '*')
@@ -198,6 +247,9 @@ impl ConflictResolver {
                 let blob: Vec<u8> = row.get(2)?;
                 let valid_from: String = row.get(3)?;
                 let importance: f64 = row.get(4)?;
+                let u_id: String = row.get(5)?;
+                let s_id: String = row.get(6)?;
+                let a_id: String = row.get(7)?;
 
                 // Deserialize embedding
                 let embedding: Vec<f32> = blob
@@ -211,18 +263,10 @@ impl ConflictResolver {
                     embedding,
                     valid_from,
                     importance,
+                    user_id: u_id,
+                    session_id: s_id,
+                    agent_id: a_id,
                 });
-            }
-        }
-
-        fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f64 {
-            let dot_product: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
-            let norm_v1: f32 = v1.iter().map(|a| a * a).sum::<f32>().sqrt();
-            let norm_v2: f32 = v2.iter().map(|a| a * a).sum::<f32>().sqrt();
-            if norm_v1 == 0.0 || norm_v2 == 0.0 {
-                0.0
-            } else {
-                (dot_product / (norm_v1 * norm_v2)) as f64
             }
         }
 
@@ -239,7 +283,7 @@ impl ConflictResolver {
                     continue;
                 }
 
-                let sim = cosine_similarity(&f1.embedding, &f2.embedding);
+                let sim = calculate_cosine_similarity(&f1.embedding, &f2.embedding);
                 if sim >= semantic_threshold {
                     conflicts_found += 1;
                     let conflict_id = uuid::Uuid::new_v4().to_string();
@@ -261,6 +305,19 @@ impl ConflictResolver {
 
                     resolved_loser_ids.insert(loser.node_id.clone());
 
+                    let details = ConflictDetails::Semantic {
+                        fact_id_a: f1.node_id.clone(),
+                        fact_id_b: f2.node_id.clone(),
+                        text_a: f1.raw_text.clone(),
+                        text_b: f2.raw_text.clone(),
+                        similarity: sim,
+                    };
+
+                    conflicts.push(ConflictPair {
+                        id: conflict_id.clone(),
+                        details,
+                    });
+
                     let action_taken = format!(
                         "Resolved semantic conflict (sim={:.3}): \"{}\" (valid: {}) wins over \"{}\" (valid: {})",
                         sim, winner.raw_text, winner.valid_from, loser.raw_text, loser.valid_from
@@ -271,8 +328,19 @@ impl ConflictResolver {
                             "UPDATE semantic_metadata 
                              SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 
                                  superseded_by = ?1 
-                             WHERE node_id = ?2 AND valid_from = ?3",
-                            params![winner.node_id, loser.node_id, loser.valid_from],
+                             WHERE node_id = ?2 
+                               AND valid_from = ?3
+                               AND user_id = ?4
+                               AND session_id = ?5
+                               AND agent_id = ?6",
+                            params![
+                                winner.node_id,
+                                loser.node_id,
+                                loser.valid_from,
+                                loser.user_id,
+                                loser.session_id,
+                                loser.agent_id
+                            ],
                         )?;
                     }
 
@@ -296,6 +364,7 @@ impl ConflictResolver {
 
         Ok(ConflictResolutionReport {
             conflicts_found,
+            conflicts,
             resolutions_applied,
             dry_run,
         })
@@ -310,11 +379,13 @@ mod tests {
     fn test_serialization() {
         let report = ConflictResolutionReport {
             conflicts_found: 0,
+            conflicts: vec![],
             resolutions_applied: vec![],
             dry_run: true,
         };
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("conflictsFound"));
+        assert!(json.contains("conflicts"));
     }
 
     #[tokio::test]
@@ -367,11 +438,13 @@ mod tests {
         assert_eq!(report_dry.conflicts_found, 1);
         assert_eq!(report_dry.resolutions_applied.len(), 1);
         assert!(!report_dry.resolutions_applied[0].resolved); // not resolved in dry run
+        assert_eq!(report_dry.conflicts.len(), 1);
 
         // Resolve conflicts (live run)
         let report_live = ConflictResolver::run(&graph, &semantic, &exclusive, 0.85, "recency", false, &scope)?;
         assert_eq!(report_live.conflicts_found, 1);
         assert!(report_live.resolutions_applied[0].resolved);
+        assert_eq!(report_live.conflicts.len(), 1);
 
         // Verify that LA wins (it was created later)
         let active = graph.read_graph(&scope)?;
@@ -403,11 +476,13 @@ mod tests {
         assert_eq!(report_dry.conflicts_found, 1);
         assert_eq!(report_dry.resolutions_applied.len(), 1);
         assert!(!report_dry.resolutions_applied[0].resolved);
+        assert_eq!(report_dry.conflicts.len(), 1);
 
         // Resolve live
         let report_live = ConflictResolver::run(&graph, &semantic, &[], 0.85, "recency", false, &scope)?;
         assert_eq!(report_live.conflicts_found, 1);
         assert!(report_live.resolutions_applied[0].resolved);
+        assert_eq!(report_live.conflicts.len(), 1);
 
         // Verify fact-1 is invalidated and only fact-2 is active
         let active = semantic.query_as_of(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(), &scope)?;

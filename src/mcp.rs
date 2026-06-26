@@ -860,7 +860,7 @@ impl MemoryServer {
     }
 
     #[tool(
-        description = "Invalidate a semantic fact by ID or a graph relation by from/to/relationType"
+        description = "Invalidate a graph relation (via from/to/relationType) or a semantic fact (via factId)."
     )]
     async fn invalidate_fact(
         &self,
@@ -868,34 +868,40 @@ impl MemoryServer {
     ) -> Result<CallToolResult, McpError> {
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
-
-        let mut invalidated_any = false;
         let mut messages = Vec::new();
+        let mut parameter_provided = false;
 
         if let Some(ref fact_id) = input.fact_id {
+            parameter_provided = true;
             match self.coordinator.semantic.invalidate_fact(fact_id, &scope) {
-                Ok(_) => {
+                Ok(true) => {
                     let _ = self.coordinator.episodic.log_access(fact_id, "semantic", &accessed_by);
-                    invalidated_any = true;
                     messages.push(format!("Semantic fact '{}' invalidated successfully", fact_id));
+                }
+                Ok(false) => {
+                    messages.push(format!("Semantic fact '{}' not found or already invalidated", fact_id));
                 }
                 Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
             }
         }
 
         if let (Some(from), Some(to), Some(rel_type)) = (input.from.as_ref(), input.to.as_ref(), input.relation_type.as_ref()) {
+            parameter_provided = true;
             match self.coordinator.graph.invalidate_edge(from, to, rel_type, &scope) {
-                Ok(_) => {
+                Ok(true) => {
                     let edge_desc = format!("{}->{} ({})", from, to, rel_type);
                     let _ = self.coordinator.episodic.log_access(&edge_desc, "graph", &accessed_by);
-                    invalidated_any = true;
                     messages.push(format!("Graph relation '{}' invalidated successfully", edge_desc));
+                }
+                Ok(false) => {
+                    let edge_desc = format!("{}->{} ({})", from, to, rel_type);
+                    messages.push(format!("Graph relation '{}' not found or already invalidated", edge_desc));
                 }
                 Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
             }
         }
 
-        if !invalidated_any {
+        if !parameter_provided {
             return Err(McpError::invalid_params(
                 "Either factId or all of (from, to, relationType) must be provided to invalidate_fact",
                 None,
@@ -938,8 +944,21 @@ impl MemoryServer {
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
-        let graph_res = self.coordinator.graph.query_as_of(&input.as_of, &scope);
-        let semantic_res = self.coordinator.semantic.query_as_of(&input.as_of, &scope);
+        let normalized_as_of = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&input.as_of) {
+            dt.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&input.as_of, "%Y-%m-%dT%H:%M:%SZ") {
+            dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&input.as_of, "%Y-%m-%d %H:%M:%S") {
+            dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        } else {
+            return Err(McpError::invalid_params(
+                format!("Invalid datetime format for asOf: '{}'. Expected RFC3339.", input.as_of),
+                None,
+            ));
+        };
+
+        let graph_res = self.coordinator.graph.query_as_of(&normalized_as_of, &scope);
+        let semantic_res = self.coordinator.semantic.query_as_of(&normalized_as_of, &scope);
 
         if let Ok(ref graph) = graph_res {
             for entity in &graph.entities {

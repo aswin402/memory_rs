@@ -463,18 +463,18 @@ impl GraphMemory {
         Ok(())
     }
 
-    pub fn invalidate_edge(&self, from_name: &str, to_name: &str, relation_type: &str, scope: &crate::layers::MemoryScope) -> Result<()> {
+    pub fn invalidate_edge(&self, from_name: &str, to_name: &str, relation_type: &str, scope: &crate::layers::MemoryScope) -> Result<bool> {
         let conn = self.conn.lock();
         let user_id = scope.user_id.as_deref().unwrap_or("*");
         let session_id = scope.session_id.as_deref().unwrap_or("*");
         let agent_id = scope.agent_id.as_deref().unwrap_or("*");
 
-        conn.execute(
+        let rows_updated = conn.execute(
             "UPDATE graph_edges SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') 
              WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6 AND valid_until IS NULL",
             params![from_name, to_name, relation_type, user_id, session_id, agent_id],
         )?;
-        Ok(())
+        Ok(rows_updated > 0)
     }
 
     pub fn query_fact_history(
