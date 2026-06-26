@@ -171,6 +171,20 @@ impl SemanticMemory {
     pub fn query_similar_facts_vector(&self, query: &str, limit: usize, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
 
+        // Short-circuit if there are no active facts in scope to avoid embedding / HNSW panic on empty index
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM semantic_metadata 
+             WHERE valid_until IS NULL
+               AND (?1 IS NULL OR user_id = ?1 OR user_id = '*')
+               AND (?2 IS NULL OR session_id = ?2 OR session_id = '*')
+               AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')",
+            params![scope.user_id, scope.session_id, scope.agent_id],
+            |r| r.get(0)
+        )?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
         // Generate query embedding
         let embeddings = {
             let model = self.model.lock();
