@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     log::info!("Initializing OpenMemory Cognitive Engine (memory_rs)...");
 
     let config = config::Config::from_env();
-    let coordinator = Arc::new(MemoryCoordinator::new(&config.db_path)?);
+    let coordinator = Arc::new(MemoryCoordinator::new(&config.db_path, config.default_ttl)?);
 
     let args: Vec<String> = std::env::args().collect();
     let grpc_port = if let Some(pos) = args.iter().position(|a| a == "--grpc") {

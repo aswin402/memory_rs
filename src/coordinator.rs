@@ -24,10 +24,10 @@ pub struct MemoryCoordinator {
 }
 
 impl MemoryCoordinator {
-    pub fn new(db_path: &str) -> Result<Self> {
+    pub fn new(db_path: &str, default_ttl: u64) -> Result<Self> {
         let path = Path::new(db_path);
 
-        let working = Arc::new(WorkingMemory::new());
+        let working = Arc::new(WorkingMemory::new(default_ttl));
         let episodic = Arc::new(EpisodicMemory::new(path)?);
         let semantic = Arc::new(SemanticMemory::new(path)?);
         let graph = Arc::new(GraphMemory::new(path)?);

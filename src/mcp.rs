@@ -266,6 +266,43 @@ pub struct QueryAsOfInput {
     pub agent_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkingMemoryInput {
+    pub key: String,
+    pub value: String,
+    pub ttl: Option<u64>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GetWorkingMemoryInput {
+    pub key: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EvictExpiredWorkingMemoryInput {
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PromoteWorkingMemoryInput {
+    pub key: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectAndResolveConflictsInput {
@@ -1022,6 +1059,102 @@ impl MemoryServer {
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
+
+    #[tool(
+        description = "Set an ephemeral key-value pair in working memory, with an optional TTL (seconds)"
+    )]
+    async fn set_working_memory(
+        &self,
+        Parameters(input): Parameters<SetWorkingMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        self.coordinator.working.set(&input.key, &input.value, input.ttl, &scope);
+        let _ = self.coordinator.episodic.log_access(&format!("working:{}", input.key), "working", &accessed_by);
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Successfully set working memory key '{}' (TTL: {}s)",
+            input.key,
+            input.ttl.unwrap_or(300)
+        ))]))
+    }
+
+    #[tool(
+        description = "Retrieve an ephemeral value from working memory. Checks and handles TTL expiration"
+    )]
+    async fn get_working_memory(
+        &self,
+        Parameters(input): Parameters<GetWorkingMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        let result = self.coordinator.working.get(&input.key, &scope);
+        let _ = self.coordinator.episodic.log_access(&format!("working:{}", input.key), "working", &accessed_by);
+
+        match result {
+            Some(value) => {
+                let combined = serde_json::json!({
+                    "key": input.key,
+                    "value": value,
+                });
+                Ok(CallToolResult::success(vec![Content::text(combined.to_string())]))
+            }
+            None => {
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Key '{}' not found or has expired in working memory.",
+                    input.key
+                ))]))
+            }
+        }
+    }
+
+    #[tool(
+        description = "Evict expired keys from working memory, promoting important ones (accessed >= 3 times) to semantic memory"
+    )]
+    async fn evict_expired_working_memory(
+        &self,
+        Parameters(_input): Parameters<EvictExpiredWorkingMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        match self.coordinator.working.evict_expired(&self.coordinator.semantic) {
+            Ok(count) => {
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Successfully evicted {} expired entries from working memory.",
+                    count
+                ))]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Manually promote a working memory entry to long-term semantic memory and remove it from working memory"
+    )]
+    async fn promote_working_memory(
+        &self,
+        Parameters(input): Parameters<PromoteWorkingMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        match self.coordinator.working.promote_to_semantic(&input.key, &self.coordinator.semantic, &scope) {
+            Ok(true) => {
+                let _ = self.coordinator.episodic.log_access(&format!("promote:{}", input.key), "working", &accessed_by);
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Successfully promoted key '{}' to long-term semantic memory.",
+                    input.key
+                ))]))
+            }
+            Ok(false) => {
+                Ok(CallToolResult::success(vec![Content::text(format!(
+                    "Key '{}' not found in working memory.",
+                    input.key
+                ))]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -1562,7 +1695,7 @@ mod tests {
     #[test]
     fn test_js_ts_indexing() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_mem_{}.db", uuid::Uuid::new_v4()));
-        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?;
         let scope = MemoryScope::default();
 
         // 1. JS file setup
@@ -1678,7 +1811,7 @@ class MyTSClass {
     #[test]
     fn test_fts_search() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_fts_{}.db", uuid::Uuid::new_v4()));
-        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?;
         let scope = MemoryScope::default();
 
         // 1. Add facts to semantic memory
@@ -1709,7 +1842,7 @@ class MyTSClass {
     #[test]
     fn test_hybrid_search() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_hybrid_{}.db", uuid::Uuid::new_v4()));
-        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?;
         let scope = MemoryScope::default();
 
         // 1. Add facts to semantic memory
@@ -1735,7 +1868,7 @@ class MyTSClass {
     #[tokio::test]
     async fn test_temporal_mcp_tools() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_mcp_{}.db", uuid::Uuid::new_v4()));
-        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap())?);
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
         let server = MemoryServer::new(coordinator.clone());
         let scope = MemoryScope::default();
 
@@ -1829,7 +1962,7 @@ class MyTSClass {
     #[tokio::test]
     async fn test_mcp_conflict_tool() -> Result<()> {
         let db_path = std::env::temp_dir().join(format!("test_mcp_conflict_{}.db", uuid::Uuid::new_v4()));
-        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap())?);
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
         let server = MemoryServer::new(coordinator.clone());
         let scope = MemoryScope::default();
 
@@ -1880,6 +2013,75 @@ class MyTSClass {
         let content = val["content"][0]["text"].as_str().unwrap();
         assert!(content.contains("\"conflictsFound\": 1"));
         assert!(content.contains("\"resolved\": true"));
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_working_memory_mcp_tools() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_working_mcp_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // 1. Set working memory with a short TTL (1 second)
+        let set_input = SetWorkingMemoryInput {
+            key: "session_notes".to_string(),
+            value: "User wants to build a Rust cognitive memory engine".to_string(),
+            ttl: Some(1),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let set_res = server.set_working_memory(Parameters(set_input)).await?;
+        let set_val = serde_json::to_value(&set_res)?;
+        assert!(set_val["content"][0]["text"].as_str().unwrap().contains("Successfully set"));
+
+        // 2. Get working memory immediately (should exist)
+        let get_input = GetWorkingMemoryInput {
+            key: "session_notes".to_string(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let get_res = server.get_working_memory(Parameters(get_input.clone())).await?;
+        let get_val = serde_json::to_value(&get_res)?;
+        assert!(get_val["content"][0]["text"].as_str().unwrap().contains("User wants to build"));
+
+        // 3. Sleep 1.5 seconds for expiration
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+        // 4. Get working memory again (should be expired/gone)
+        let get_res_2 = server.get_working_memory(Parameters(get_input)).await?;
+        let get_val_2 = serde_json::to_value(&get_res_2)?;
+        assert!(get_val_2["content"][0]["text"].as_str().unwrap().contains("expired"));
+
+        // 5. Test promotion to semantic
+        let set_input_2 = SetWorkingMemoryInput {
+            key: "permanent_preference".to_string(),
+            value: "Prefers vanilla styling over Tailwind".to_string(),
+            ttl: Some(300),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let _ = server.set_working_memory(Parameters(set_input_2)).await?;
+
+        let promote_input = PromoteWorkingMemoryInput {
+            key: "permanent_preference".to_string(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let promote_res = server.promote_working_memory(Parameters(promote_input)).await?;
+        let promote_val = serde_json::to_value(&promote_res)?;
+        assert!(promote_val["content"][0]["text"].as_str().unwrap().contains("Successfully promoted"));
+
+        // Verify it was written to semantic memory
+        let semantic_facts = coordinator.semantic.query_as_of(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(), &scope)?;
+        let found = semantic_facts.iter().any(|f| f.raw_text.contains("Prefers vanilla styling"));
+        assert!(found, "Fact should be promoted to semantic layer");
 
         let _ = std::fs::remove_file(db_path);
         Ok(())
