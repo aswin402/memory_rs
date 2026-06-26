@@ -89,26 +89,26 @@
 > **Ref:** [Zep/Graphiti](https://github.com/getzep/graphiti)
 
 ### Bi-temporal Fact Model
-- [ ] Add `valid_from`, `valid_until`, `superseded_by`, `confidence` columns to `graph_edges`
-- [ ] Add `valid_from`, `valid_until`, `superseded_by` columns to `semantic_metadata`
-- [ ] Default `valid_until = NULL` means currently valid
-- [ ] New MCP tool: `invalidate_fact`
-- [ ] New MCP tool: `query_fact_history`
-- [ ] New MCP tool: `query_as_of`
+- [x] Add `valid_from`, `valid_until`, `superseded_by`, `confidence` columns to `graph_edges`
+- [x] Add `valid_from`, `valid_until`, `superseded_by` columns to `semantic_metadata`
+- [x] Default `valid_until = NULL` means currently valid
+- [x] New MCP tool: `invalidate_fact`
+- [x] New MCP tool: `query_fact_history`
+- [x] New MCP tool: `query_as_of`
 
 ### Conflict Resolution
-- [ ] Create `src/search/conflict.rs` module
-- [ ] `detect_conflicts()` — find same entity+relation with different values
-- [ ] `resolve_by_recency()` — newest fact wins, old gets `valid_until = NOW`
-- [ ] `resolve_by_confidence()` — higher confidence score wins
-- [ ] New MCP tool: `detect_and_resolve_conflicts`
+- [x] Create `src/search/conflict.rs` module
+- [x] `detect_conflicts()` — find same entity+relation with different values
+- [x] `resolve_by_recency()` — newest fact wins, old gets `valid_until = NOW`
+- [x] `resolve_by_confidence()` — higher confidence score wins
+- [x] New MCP tool: `detect_and_resolve_conflicts`
 
 ### Working Memory Enhancement
-- [ ] Add `WorkingEntry` struct with `created_at`, `ttl`, `access_count`
-- [ ] Implement TTL-based expiration on `get()`
-- [ ] Add `evict_expired()` method
-- [ ] Add `promote_to_semantic()` — move important entries to long-term before eviction
-- [ ] Make `default_ttl` configurable via `Config`
+- [x] Add `WorkingEntry` struct with `created_at`, `ttl`, `access_count`
+- [x] Implement TTL-based expiration on `get()`
+- [x] Add `evict_expired()` method
+- [x] Add `promote_to_semantic()` — move important entries to long-term before eviction
+- [x] Make `default_ttl` configurable via `Config`
 
 ---
 
