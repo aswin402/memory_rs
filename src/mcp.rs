@@ -305,6 +305,16 @@ pub struct PromoteWorkingMemoryInput {
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct SmartStoreInput {
+    pub text: Option<String>,
+    pub relation: Option<Relation>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectAndResolveConflictsInput {
     pub strategy: Option<String>,
     pub dry_run: Option<bool>,
@@ -1151,6 +1161,36 @@ impl MemoryServer {
                     "Key '{}' not found in working memory.",
                     input.key
                 ))]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Intelligently store or merge memories in Semantic and Graph layers using deduplication and decision logic"
+    )]
+    async fn smart_store(
+        &self,
+        Parameters(input): Parameters<SmartStoreInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+
+        let res = crate::consolidation::engine::DecisionEngine::decide_and_store(
+            &self.coordinator.graph,
+            &self.coordinator.semantic,
+            input.text.as_deref(),
+            input.relation.as_ref(),
+            &scope,
+        );
+
+        match res {
+            Ok(report) => {
+                let id = report.winner_id.as_deref().unwrap_or(report.loser_id.as_deref().unwrap_or(""));
+                let _ = self.coordinator.episodic.log_access(id, &report.layer, &accessed_by);
+                
+                let text = serde_json::to_string_pretty(&report).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
             }
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
@@ -2082,6 +2122,107 @@ class MyTSClass {
         let semantic_facts = coordinator.semantic.query_as_of(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(), &scope)?;
         let found = semantic_facts.iter().any(|f| f.raw_text.contains("Prefers vanilla styling"));
         assert!(found, "Fact should be promoted to semantic layer");
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_smart_store_mcp_tool() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_smart_store_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // --- PART 1: Semantic Layer ---
+        // 1. ADD a new fact
+        let input_add = SmartStoreInput {
+            text: Some("Aswin is a software engineer".to_string()),
+            relation: None,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_add = server.smart_store(Parameters(input_add)).await?;
+        let val_add = serde_json::to_value(&res_add)?;
+        let text_add = val_add["content"][0]["text"].as_str().unwrap();
+        assert!(text_add.contains("\"action\": \"add\""));
+
+        // 2. NO-OP for exact duplicate
+        let input_noop = SmartStoreInput {
+            text: Some("Aswin is a software engineer".to_string()),
+            relation: None,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_noop = server.smart_store(Parameters(input_noop)).await?;
+        let val_noop = serde_json::to_value(&res_noop)?;
+        let text_noop = val_noop["content"][0]["text"].as_str().unwrap();
+        assert!(text_noop.contains("\"action\": \"no-op\""));
+
+        // 3. UPDATE for high-similarity enrichment (similarity > 0.92 but < 0.98)
+        let input_update = SmartStoreInput {
+            text: Some("Aswin is a senior software engineer".to_string()),
+            relation: None,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+
+        let res_update = server.smart_store(Parameters(input_update)).await?;
+        let val_update = serde_json::to_value(&res_update)?;
+        let text_update = val_update["content"][0]["text"].as_str().unwrap();
+        assert!(text_update.contains("\"action\": \"update\""));
+
+        // Verify the enriched fact exists
+        let semantic_facts = coordinator.semantic.query_as_of(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(), &scope)?;
+        let found = semantic_facts.iter().any(|f| f.raw_text.contains("senior software engineer"));
+        assert!(found, "Enriched fact should be in semantic memory");
+
+        // --- PART 2: Graph Layer ---
+        // 1. ADD first relation
+        let rel_1 = Relation {
+            from: "Jane".to_string(),
+            to: "NY".to_string(),
+            relation_type: "lives_in".to_string(),
+        };
+        let input_rel_1 = SmartStoreInput {
+            text: None,
+            relation: Some(rel_1),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_rel_1 = server.smart_store(Parameters(input_rel_1)).await?;
+        let val_rel_1 = serde_json::to_value(&res_rel_1)?;
+        let text_rel_1 = val_rel_1["content"][0]["text"].as_str().unwrap();
+        assert!(text_rel_1.contains("\"action\": \"add\""));
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // 2. DELETE_ADD for exclusive relation update
+        let rel_2 = Relation {
+            from: "Jane".to_string(),
+            to: "LA".to_string(),
+            relation_type: "lives_in".to_string(),
+        };
+        let input_rel_2 = SmartStoreInput {
+            text: None,
+            relation: Some(rel_2),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_rel_2 = server.smart_store(Parameters(input_rel_2)).await?;
+        let val_rel_2 = serde_json::to_value(&res_rel_2)?;
+        let text_rel_2 = val_rel_2["content"][0]["text"].as_str().unwrap();
+        assert!(text_rel_2.contains("\"action\": \"delete_add\""));
+
+        // Verify LA is the active lives_in relation
+        let graph_kg = coordinator.graph.read_graph(&scope)?;
+        assert_eq!(graph_kg.relations.len(), 1);
+        assert_eq!(graph_kg.relations[0].to, "LA");
 
         let _ = std::fs::remove_file(db_path);
         Ok(())

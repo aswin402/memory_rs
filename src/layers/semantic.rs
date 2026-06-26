@@ -463,6 +463,51 @@ impl SemanticMemory {
         Ok(updated)
     }
 
+    pub fn update_fact(
+        &self,
+        node_id: &str,
+        text: &str,
+        importance: f64,
+        scope: &crate::layers::MemoryScope,
+    ) -> Result<()> {
+        let conn = self.conn.lock();
+        let timestamp = chrono::Utc::now().to_rfc3339();
+
+        let user_id = scope.user_id.as_deref().unwrap_or("*");
+        let session_id = scope.session_id.as_deref().unwrap_or("*");
+        let agent_id = scope.agent_id.as_deref().unwrap_or("*");
+
+        // Generate embedding vector
+        let embeddings = {
+            let model = self.model.lock();
+            model.embed(vec![text.to_string()], None)?
+        };
+        if embeddings.is_empty() {
+            anyhow::bail!("Failed to generate embedding for updated fact");
+        }
+        let vector = &embeddings[0];
+
+        // Serialize vector
+        let mut blob = Vec::with_capacity(vector.len() * 4);
+        for &val in vector {
+            blob.extend_from_slice(&val.to_ne_bytes());
+        }
+
+        conn.execute(
+            "UPDATE semantic_metadata 
+             SET raw_text = ?1, embedding = ?2, timestamp = ?3, importance = ?4
+             WHERE node_id = ?5 AND user_id = ?6 AND session_id = ?7 AND agent_id = ?8 AND valid_until IS NULL",
+            params![text, blob, timestamp, importance, node_id, user_id, session_id, agent_id],
+        )?;
+
+        // Rebuild HNSW index
+        let dimensions = 384;
+        let world = rebuild_hnsw_index(&conn, dimensions)?;
+        *self.hnsw_index.lock() = world;
+
+        Ok(())
+    }
+
     pub fn query_as_of(&self, as_of: &str, scope: &crate::layers::MemoryScope) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(

@@ -6,6 +6,7 @@ mod coordinator;
 mod layers;
 mod mcp;
 mod search;
+mod consolidation;
 
 use coordinator::MemoryCoordinator;
 
