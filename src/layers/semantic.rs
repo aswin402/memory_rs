@@ -43,7 +43,23 @@ impl SemanticMemory {
             CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 index_data BLOB NOT NULL
-            );",
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(
+                node_id UNINDEXED,
+                raw_text
+            );
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ai AFTER INSERT ON semantic_metadata BEGIN
+                INSERT INTO semantic_fts(node_id, raw_text) VALUES (new.node_id, new.raw_text);
+            END;
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ad AFTER DELETE ON semantic_metadata BEGIN
+                DELETE FROM semantic_fts WHERE node_id = old.node_id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_au AFTER UPDATE OF raw_text ON semantic_metadata BEGIN
+                UPDATE semantic_fts SET raw_text = new.raw_text WHERE node_id = new.node_id;
+            END;
+            INSERT INTO semantic_fts(node_id, raw_text)
+            SELECT node_id, raw_text FROM semantic_metadata
+            WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
         )?;
 
         // Initialize local ONNX fastembed model
@@ -125,7 +141,7 @@ impl SemanticMemory {
         Ok(())
     }
 
-    pub fn query_similar_facts(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+    pub fn query_similar_facts_vector(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
 
         // Generate query embedding
@@ -224,6 +240,67 @@ impl SemanticMemory {
         Ok(sorted_facts)
     }
 
+    pub fn query_similar_facts(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+        // Fetch candidate lists from vector search (ranked by relevance) and FTS5 search
+        let vector_results = self.query_similar_facts_vector(query, limit * 2)?;
+        let fts_results = self.search_text(query, limit * 2)?;
+
+        // Perform Reciprocal Rank Fusion (RRF) with default k = 60
+        let rrf_results = crate::search::hybrid::HybridSearch::rrf(&vector_results, &fts_results, 60);
+
+        // Take top `limit` merged results
+        let final_results = rrf_results
+            .into_iter()
+            .take(limit)
+            .map(|(fact, _score)| fact)
+            .collect();
+
+        Ok(final_results)
+    }
+
+    pub fn search_text(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
+        let conn = self.conn.lock();
+
+        let clean_query = query
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+            .collect::<String>();
+        let words: Vec<&str> = clean_query.split_whitespace().collect();
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Join words with matching syntax, e.g. "term1* term2*"
+        let match_query = words
+            .iter()
+            .map(|w| format!("{}*", w))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let mut stmt = conn.prepare(
+            "SELECT m.node_id, m.raw_text, m.timestamp, m.importance 
+             FROM semantic_fts f
+             JOIN semantic_metadata m ON f.node_id = m.node_id
+             WHERE semantic_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2"
+        )?;
+
+        let mut rows = stmt.query(params![match_query, limit])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            results.push(SemanticFact {
+                node_id: row.get(0)?,
+                raw_text: row.get(1)?,
+                similarity: 1.0, // Placeholder similarity for FTS match
+                timestamp: row.get(2)?,
+                importance: row.get(3)?,
+            });
+        }
+
+        Ok(results)
+    }
+
     pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
@@ -243,7 +320,23 @@ impl SemanticMemory {
             CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 index_data BLOB NOT NULL
-            );",
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(
+                node_id UNINDEXED,
+                raw_text
+            );
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ai AFTER INSERT ON semantic_metadata BEGIN
+                INSERT INTO semantic_fts(node_id, raw_text) VALUES (new.node_id, new.raw_text);
+            END;
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ad AFTER DELETE ON semantic_metadata BEGIN
+                DELETE FROM semantic_fts WHERE node_id = old.node_id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS semantic_metadata_au AFTER UPDATE OF raw_text ON semantic_metadata BEGIN
+                UPDATE semantic_fts SET raw_text = new.raw_text WHERE node_id = new.node_id;
+            END;
+            INSERT INTO semantic_fts(node_id, raw_text)
+            SELECT node_id, raw_text FROM semantic_metadata
+            WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
         )?;
 
         let dimensions = 384;

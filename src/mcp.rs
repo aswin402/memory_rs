@@ -112,6 +112,13 @@ pub struct RetrieveReflectionsInput {
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct SearchTextInput {
+    pub query: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordToolPerfInput {
     pub tool_name: String,
     pub model_name: String,
@@ -418,6 +425,40 @@ impl MemoryServer {
     ) -> Result<CallToolResult, McpError> {
         let query = input.query.unwrap_or_default();
         match self.coordinator.episodic.get_reflections(&query) {
+            Ok(res) => {
+                let text = serde_json::to_string_pretty(&res).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Search for semantic facts using keyword-based SQLite FTS5 index. Matches prefix terms (e.g. 'rust*' or 'memory*')."
+    )]
+    async fn search_text(
+        &self,
+        Parameters(input): Parameters<SearchTextInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = input.limit.unwrap_or(10);
+        match self.coordinator.semantic.search_text(&input.query, limit) {
+            Ok(res) => {
+                let text = serde_json::to_string_pretty(&res).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Search for semantic facts using hybrid search (vector search + FTS5 full-text search) merged via Reciprocal Rank Fusion (RRF)."
+    )]
+    async fn hybrid_search(
+        &self,
+        Parameters(input): Parameters<SearchTextInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = input.limit.unwrap_or(10);
+        match self.coordinator.semantic.query_similar_facts(&input.query, limit) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -1235,6 +1276,61 @@ class MyTSClass {
         assert!(found_ts_class, "Should index TS Class");
         assert!(found_ts_method, "Should index TS Method");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_fts_search() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_fts_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+
+        // 1. Add facts to semantic memory
+        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8)?;
+        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9)?;
+        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7)?;
+
+        // 2. Perform FTS query for "systems programming"
+        let res_1 = coordinator.semantic.search_text("systems programming", 10)?;
+        assert_eq!(res_1.len(), 1);
+        assert_eq!(res_1[0].node_id, "fact-1");
+
+        // 3. Perform FTS query with prefix wildcard
+        let res_2 = coordinator.semantic.search_text("mcp*", 10)?;
+        assert_eq!(res_2.len(), 1);
+        assert_eq!(res_2[0].node_id, "fact-2");
+
+        // 4. Perform FTS query for SQL
+        let res_3 = coordinator.semantic.search_text("SQL database", 10)?;
+        assert_eq!(res_3.len(), 1);
+        assert_eq!(res_3[0].node_id, "fact-3");
+
+        // 5. Cleanup DB
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_hybrid_search() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_hybrid_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = MemoryCoordinator::new(db_path.to_str().unwrap())?;
+
+        // 1. Add facts to semantic memory
+        coordinator.semantic.add_fact("fact-1", "Rust is a systems programming language focused on safety and speed.", 0.8)?;
+        coordinator.semantic.add_fact("fact-2", "Model Context Protocol (MCP) defines a standard transport for context-aware AI tools.", 0.9)?;
+        coordinator.semantic.add_fact("fact-3", "SQLite is an in-process library that implements a self-contained, serverless SQL database engine.", 0.7)?;
+
+        // 2. Perform hybrid query for "mcp"
+        let res_1 = coordinator.semantic.query_similar_facts("mcp", 10)?;
+        assert!(!res_1.is_empty(), "Should return results");
+        assert_eq!(res_1[0].node_id, "fact-2");
+
+        // 3. Perform hybrid query for "SQL database"
+        let res_2 = coordinator.semantic.query_similar_facts("SQL database", 10)?;
+        assert!(!res_2.is_empty(), "Should return results");
+        assert_eq!(res_2[0].node_id, "fact-3");
+
+        // 4. Cleanup DB
+        let _ = std::fs::remove_file(db_path);
         Ok(())
     }
 }
