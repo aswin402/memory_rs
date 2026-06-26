@@ -52,34 +52,34 @@
 > **Ref:** [memory-mcp-rs](https://github.com/ssoj13/memory-mcp-rs), [Mem0](https://github.com/mem0ai/mem0), [AgentMemory](https://github.com/rohitg00/agentmemory)
 
 ### FTS5 Full-Text Search
-- [ ] Create `semantic_fts` FTS5 virtual table in `SemanticMemory::new()`
-- [ ] Add SQLite triggers to keep FTS index in sync with `semantic_metadata`
-- [ ] Add `search_text()` method on SemanticMemory
-- [ ] New MCP tool: `search_text`
+- [x] Create `semantic_fts` FTS5 virtual table in `SemanticMemory::new()`
+- [x] Add SQLite triggers to keep FTS index in sync with `semantic_metadata`
+- [x] Add `search_text()` method on SemanticMemory
+- [x] New MCP tool: `search_text`
 
 ### Hybrid Search (Reciprocal Rank Fusion)
-- [ ] Create `src/search/hybrid.rs` module
-- [ ] Implement RRF: `score = Σ 1/(k + rank_i)` across vector, FTS5, graph results
-- [ ] Modify `query_similar_facts` to use hybrid search by default
-- [ ] New MCP tool: `hybrid_search`
+- [x] Create `src/search/hybrid.rs` module
+- [x] Implement RRF: `score = Σ 1/(k + rank_i)` across vector, FTS5, graph results
+- [x] Modify `query_similar_facts` to use hybrid search by default
+- [x] New MCP tool: `hybrid_search`
 
 ### Memory Scoping
-- [ ] Add `user_id`, `session_id`, `agent_id` columns to ALL memory tables
-  - [ ] `semantic_metadata`
-  - [ ] `graph_nodes`
-  - [ ] `graph_edges`
-  - [ ] `episodic_logs`
-  - [ ] `reflection_memory`
-  - [ ] `tool_performance`
-  - [ ] `code_elements`
-  - [ ] `shared_agent_memory`
-- [ ] Add optional scope filters to ALL query MCP tools
-- [ ] Default scope `'*'` = accessible by all
+- [x] Add `user_id`, `session_id`, `agent_id` columns to ALL memory tables
+  - [x] `semantic_metadata`
+  - [x] `graph_nodes`
+  - [x] `graph_edges`
+  - [x] `episodic_logs`
+  - [x] `reflection_memory`
+  - [x] `tool_performance`
+  - [x] `code_elements`
+  - [x] `shared_agent_memory`
+- [x] Add optional scope filters to ALL query MCP tools
+- [x] Default scope `'*'` = accessible by all
 
 ### Memory Access Tracking
-- [ ] Create `memory_access_log` table
-- [ ] Log every read/search hit with `memory_id`, `layer`, `accessed_at`, `accessed_by`
-- [ ] New MCP tool: `memory_stats` (total counts, db size, most accessed)
+- [x] Create `memory_access_log` table
+- [x] Log every read/search hit with `memory_id`, `layer`, `accessed_at`, `accessed_by`
+- [x] New MCP tool: `memory_stats` (total counts, db size, most accessed)
 
 ---
 
