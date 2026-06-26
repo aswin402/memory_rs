@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use schemars::JsonSchema;
 use crate::layers::{GraphMemory, SemanticMemory, MemoryScope};
+use crate::layers::semantic::rebuild_hnsw_index;
 use anyhow::Result;
 use rusqlite::params;
 
@@ -65,7 +66,7 @@ impl ConflictResolver {
         let mut resolutions_applied = Vec::new();
 
         // 1. Graph Conflicts
-        let conn = graph.conn.lock();
+        let conn_g = graph.conn.lock();
         let user_id = scope.user_id.as_deref().unwrap_or("*");
         let session_id = scope.session_id.as_deref().unwrap_or("*");
         let agent_id = scope.agent_id.as_deref().unwrap_or("*");
@@ -78,24 +79,26 @@ impl ConflictResolver {
             confidence: f64,
         }
 
-        let mut stmt = conn.prepare(
-            "SELECT from_name, to_name, relation_type, valid_from, confidence 
-             FROM graph_edges 
-             WHERE valid_until IS NULL 
-               AND (user_id = ?1 OR user_id = '*')
-               AND (session_id = ?2 OR session_id = '*')
-               AND (agent_id = ?3 OR agent_id = '*')"
-        )?;
-        let mut rows = stmt.query(params![user_id, session_id, agent_id])?;
         let mut edges = Vec::new();
-        while let Some(row) = rows.next()? {
-            edges.push(EdgeRecord {
-                from_name: row.get(0)?,
-                to_name: row.get(1)?,
-                relation_type: row.get(2)?,
-                valid_from: row.get(3)?,
-                confidence: row.get(4)?,
-            });
+        {
+            let mut stmt = conn_g.prepare(
+                "SELECT from_name, to_name, relation_type, valid_from, confidence 
+                 FROM graph_edges 
+                 WHERE valid_until IS NULL 
+                   AND (user_id = ?1 OR user_id = '*')
+                   AND (session_id = ?2 OR session_id = '*')
+                   AND (agent_id = ?3 OR agent_id = '*')"
+            )?;
+            let mut rows = stmt.query(params![user_id, session_id, agent_id])?;
+            while let Some(row) = rows.next()? {
+                edges.push(EdgeRecord {
+                    from_name: row.get(0)?,
+                    to_name: row.get(1)?,
+                    relation_type: row.get(2)?,
+                    valid_from: row.get(3)?,
+                    confidence: row.get(4)?,
+                });
+            }
         }
 
         // Group by (from_name, relation_type)
@@ -143,7 +146,7 @@ impl ConflictResolver {
                             );
 
                             if !dry_run {
-                                conn.execute(
+                                conn_g.execute(
                                     "UPDATE graph_edges 
                                      SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 
                                          superseded_by = ?1 
@@ -163,6 +166,132 @@ impl ConflictResolver {
                     }
                 }
             }
+        }
+
+        // Drop lock on conn_g
+        drop(conn_g);
+
+        // 2. Semantic Conflicts
+        let conn_s = semantic.conn.lock();
+        struct SemanticRecord {
+            node_id: String,
+            raw_text: String,
+            embedding: Vec<f32>,
+            valid_from: String,
+            importance: f64,
+        }
+
+        let mut facts = Vec::new();
+        {
+            let mut stmt_s = conn_s.prepare(
+                "SELECT node_id, raw_text, embedding, valid_from, importance 
+                 FROM semantic_metadata 
+                 WHERE valid_until IS NULL 
+                   AND (user_id = ?1 OR user_id = '*')
+                   AND (session_id = ?2 OR session_id = '*')
+                   AND (agent_id = ?3 OR agent_id = '*')"
+            )?;
+            let mut rows_s = stmt_s.query(params![user_id, session_id, agent_id])?;
+            while let Some(row) = rows_s.next()? {
+                let node_id: String = row.get(0)?;
+                let raw_text: String = row.get(1)?;
+                let blob: Vec<u8> = row.get(2)?;
+                let valid_from: String = row.get(3)?;
+                let importance: f64 = row.get(4)?;
+
+                // Deserialize embedding
+                let embedding: Vec<f32> = blob
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
+                    .collect();
+
+                facts.push(SemanticRecord {
+                    node_id,
+                    raw_text,
+                    embedding,
+                    valid_from,
+                    importance,
+                });
+            }
+        }
+
+        fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f64 {
+            let dot_product: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
+            let norm_v1: f32 = v1.iter().map(|a| a * a).sum::<f32>().sqrt();
+            let norm_v2: f32 = v2.iter().map(|a| a * a).sum::<f32>().sqrt();
+            if norm_v1 == 0.0 || norm_v2 == 0.0 {
+                0.0
+            } else {
+                (dot_product / (norm_v1 * norm_v2)) as f64
+            }
+        }
+
+        let mut resolved_loser_ids = std::collections::HashSet::new();
+
+        // Pairwise similarity comparison
+        for i in 0..facts.len() {
+            for j in (i + 1)..facts.len() {
+                let f1 = &facts[i];
+                let f2 = &facts[j];
+
+                // Skip if either has already been resolved as a loser in this pass
+                if resolved_loser_ids.contains(&f1.node_id) || resolved_loser_ids.contains(&f2.node_id) {
+                    continue;
+                }
+
+                let sim = cosine_similarity(&f1.embedding, &f2.embedding);
+                if sim >= semantic_threshold {
+                    conflicts_found += 1;
+                    let conflict_id = uuid::Uuid::new_v4().to_string();
+
+                    let (winner, loser) = match strategy {
+                        "confidence" | "importance" => {
+                            if f1.importance > f2.importance {
+                                (f1, f2)
+                            } else if f2.importance > f1.importance {
+                                (f2, f1)
+                            } else {
+                                if f1.valid_from > f2.valid_from { (f1, f2) } else { (f2, f1) }
+                            }
+                        }
+                        _ => {
+                            if f1.valid_from > f2.valid_from { (f1, f2) } else { (f2, f1) }
+                        }
+                    };
+
+                    resolved_loser_ids.insert(loser.node_id.clone());
+
+                    let action_taken = format!(
+                        "Resolved semantic conflict (sim={:.3}): \"{}\" (valid: {}) wins over \"{}\" (valid: {})",
+                        sim, winner.raw_text, winner.valid_from, loser.raw_text, loser.valid_from
+                    );
+
+                    if !dry_run {
+                        conn_s.execute(
+                            "UPDATE semantic_metadata 
+                             SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 
+                                 superseded_by = ?1 
+                             WHERE node_id = ?2 AND valid_from = ?3",
+                            params![winner.node_id, loser.node_id, loser.valid_from],
+                        )?;
+                    }
+
+                    resolutions_applied.push(ResolutionAction {
+                        conflict_id,
+                        resolved: !dry_run,
+                        action_taken,
+                        winner_id: winner.node_id.clone(),
+                        loser_id: loser.node_id.clone(),
+                    });
+                }
+            }
+        }
+
+        // Rebuild HNSW if anything mutated
+        if !dry_run && !resolved_loser_ids.is_empty() {
+            let dimensions = 384;
+            let world = rebuild_hnsw_index(&conn_s, dimensions)?;
+            *semantic.hnsw_index.lock() = world;
         }
 
         Ok(ConflictResolutionReport {
@@ -248,6 +377,42 @@ mod tests {
         let active = graph.read_graph(&scope)?;
         assert_eq!(active.relations.len(), 1);
         assert_eq!(active.relations[0].to, "LA");
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_semantic_conflict_detection_and_resolution() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_semantic_conflict_{}.db", uuid::Uuid::new_v4()));
+        let graph = GraphMemory::new(&db_path)?;
+        let semantic = SemanticMemory::new(&db_path)?;
+        let scope = MemoryScope::default();
+
+        // Add two semantically identical facts
+        // fact-1 (earlier)
+        semantic.add_fact("fact-1", "Aswin lives in San Francisco", 0.9, &scope)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // fact-2 (later)
+        semantic.add_fact("fact-2", "Aswin resides in San Francisco city", 0.9, &scope)?;
+
+        // Detect conflicts
+        let report_dry = ConflictResolver::run(&graph, &semantic, &[], 0.85, "recency", true, &scope)?;
+        assert_eq!(report_dry.conflicts_found, 1);
+        assert_eq!(report_dry.resolutions_applied.len(), 1);
+        assert!(!report_dry.resolutions_applied[0].resolved);
+
+        // Resolve live
+        let report_live = ConflictResolver::run(&graph, &semantic, &[], 0.85, "recency", false, &scope)?;
+        assert_eq!(report_live.conflicts_found, 1);
+        assert!(report_live.resolutions_applied[0].resolved);
+
+        // Verify fact-1 is invalidated and only fact-2 is active
+        let active = semantic.query_as_of(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(), &scope)?;
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].node_id, "fact-2");
 
         let _ = std::fs::remove_file(db_path);
         Ok(())

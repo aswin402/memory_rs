@@ -20,7 +20,7 @@ pub struct SemanticFact {
 pub struct SemanticMemory {
     pub(crate) conn: Mutex<Connection>,
     model: Mutex<TextEmbedding>,
-    hnsw_index: Mutex<World>,
+    pub(crate) hnsw_index: Mutex<World>,
 }
 
 impl SemanticMemory {
@@ -493,7 +493,7 @@ impl SemanticMemory {
     }
 }
 
-fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Result<World> {
+pub(crate) fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Result<World> {
     log::info!("Rebuilding local HNSW index from database embeddings...");
     let mut world = World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance))?;
 
