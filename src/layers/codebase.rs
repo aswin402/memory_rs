@@ -1,8 +1,8 @@
 use anyhow::Result;
-use std::path::Path;
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CodeElement {
@@ -45,14 +45,8 @@ impl CodebaseMemory {
     pub fn new(db_path: &Path) -> Result<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS codebase_signatures (
-                id TEXT PRIMARY KEY,
-                file_path TEXT NOT NULL,
-                item_name TEXT NOT NULL,
-                item_type TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                dependencies TEXT
-            );
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
             CREATE TABLE IF NOT EXISTS code_elements (
                 element_id TEXT PRIMARY KEY,
                 file_path TEXT NOT NULL,
@@ -81,7 +75,7 @@ impl CodebaseMemory {
                 bug_fixed INTEGER NOT NULL DEFAULT 0,
                 timestamp TEXT NOT NULL,
                 PRIMARY KEY (file_path, version)
-            );"
+            );",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -237,9 +231,13 @@ impl CodebaseMemory {
         let mut stmt = if !caller_id.is_empty() && !callee_id.is_empty() {
             conn.prepare("SELECT caller_id, callee_id, call_site FROM code_calls WHERE caller_id = ?1 AND callee_id = ?2")?
         } else if !caller_id.is_empty() {
-            conn.prepare("SELECT caller_id, callee_id, call_site FROM code_calls WHERE caller_id = ?1")?
+            conn.prepare(
+                "SELECT caller_id, callee_id, call_site FROM code_calls WHERE caller_id = ?1",
+            )?
         } else if !callee_id.is_empty() {
-            conn.prepare("SELECT caller_id, callee_id, call_site FROM code_calls WHERE callee_id = ?1")?
+            conn.prepare(
+                "SELECT caller_id, callee_id, call_site FROM code_calls WHERE callee_id = ?1",
+            )?
         } else {
             conn.prepare("SELECT caller_id, callee_id, call_site FROM code_calls")?
         };
@@ -265,7 +263,18 @@ impl CodebaseMemory {
     }
 
     pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
-        *self.conn.lock() = Connection::open(db_path)?;
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;",
+        )?;
+        *self.conn.lock() = conn;
+        Ok(())
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         Ok(())
     }
 }

@@ -5,3 +5,7 @@
 compile_err.txt
 /external/
 /.fastembed_cache/
+*.db-shm
+*.db-wal
+*.db.branch_*
+

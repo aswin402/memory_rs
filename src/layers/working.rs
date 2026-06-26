@@ -19,6 +19,9 @@ impl WorkingMemory {
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        self.session_data.read().ok().and_then(|map| map.get(key).cloned())
+        self.session_data
+            .read()
+            .ok()
+            .and_then(|map| map.get(key).cloned())
     }
 }

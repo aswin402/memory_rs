@@ -1,12 +1,12 @@
 use anyhow::Result;
-use std::path::Path;
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
-use small_world_rs::world::world::World;
-use small_world_rs::distance_metric::{DistanceMetric, CosineDistance};
+use small_world_rs::distance_metric::{CosineDistance, DistanceMetric};
 use small_world_rs::primitives::vector::Vector;
+use small_world_rs::world::world::World;
+use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SemanticFact {
@@ -27,7 +27,9 @@ impl SemanticMemory {
     pub fn new(db_path: &Path) -> Result<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS semantic_metadata (
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS semantic_metadata (
                 node_id TEXT PRIMARY KEY,
                 raw_text TEXT NOT NULL,
                 embedding BLOB NOT NULL,
@@ -41,20 +43,20 @@ impl SemanticMemory {
             CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 index_data BLOB NOT NULL
-            );"
+            );",
         )?;
 
         // Initialize local ONNX fastembed model
         let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-                .with_show_download_progress(false)
+            InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(false),
         )?;
 
         let dimensions = 384; // AllMiniLML6V2 uses 384 dimensions
 
         // Load or rebuild HNSW index from SQLite
         let hnsw_index = {
-            let mut stmt = conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1")?;
+            let mut stmt =
+                conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1")?;
             let mut rows = stmt.query([])?;
             if let Some(row) = rows.next()? {
                 let blob: Vec<u8> = row.get(0)?;
@@ -80,20 +82,21 @@ impl SemanticMemory {
     pub fn add_fact(&self, node_id: &str, text: &str, importance: f64) -> Result<()> {
         let conn = self.conn.lock();
         let timestamp = chrono::Utc::now().to_rfc3339();
-        
+
         // Generate embedding vector
         let embeddings = {
-            let mut model = self.model.lock();
+            let model = self.model.lock();
             model.embed(vec![text], None)?
         };
-        
+
         if embeddings.is_empty() {
             anyhow::bail!("Failed to generate embedding");
         }
         let vector_values = &embeddings[0]; // Vec<f32>
-        
+
         // Serialize vector into a byte blob (Vec<u8>)
-        let blob: Vec<u8> = vector_values.iter()
+        let blob: Vec<u8> = vector_values
+            .iter()
             .flat_map(|val| val.to_ne_bytes().to_vec())
             .collect();
 
@@ -111,7 +114,7 @@ impl SemanticMemory {
             let mut index = self.hnsw_index.lock();
             let vector = Vector::new_f32(vector_values);
             index.insert_vector(mapping_id, vector)?;
-            
+
             let dumped = index.dump()?;
             conn.execute(
                 "INSERT OR REPLACE INTO semantic_hnsw_index (id, index_data) VALUES (1, ?1)",
@@ -124,13 +127,13 @@ impl SemanticMemory {
 
     pub fn query_similar_facts(&self, query: &str, limit: usize) -> Result<Vec<SemanticFact>> {
         let conn = self.conn.lock();
-        
+
         // Generate query embedding
         let embeddings = {
-            let mut model = self.model.lock();
+            let model = self.model.lock();
             model.embed(vec![query], None)?
         };
-        
+
         if embeddings.is_empty() {
             anyhow::bail!("Failed to generate query embedding");
         }
@@ -150,18 +153,20 @@ impl SemanticMemory {
         // Map u32 IDs back to node_id strings
         let mut node_ids = Vec::new();
         for id in candidate_ids {
-            let node_id: Option<String> = conn.query_row(
-                "SELECT node_id FROM semantic_vector_mapping WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            ).ok();
+            let node_id: Option<String> = conn
+                .query_row(
+                    "SELECT node_id FROM semantic_vector_mapping WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .ok();
             if let Some(nid) = node_id {
                 node_ids.push(nid);
             }
         }
 
         // Retrieve metadata and compute similarity for candidates
-        let mut facts = Vec::new();
+        let mut facts_with_scores = Vec::new();
         for node_id in node_ids {
             let mut stmt = conn.prepare(
                 "SELECT raw_text, embedding, timestamp, importance FROM semantic_metadata WHERE node_id = ?1"
@@ -180,27 +185,51 @@ impl SemanticMemory {
                 }
 
                 let similarity = calculate_cosine_similarity(query_vector_values, &vector);
-                
-                facts.push(SemanticFact {
-                    node_id,
-                    raw_text,
+
+                let parsed_time = chrono::DateTime::parse_from_rfc3339(&timestamp)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|_| chrono::Utc::now());
+                let elapsed = chrono::Utc::now().signed_duration_since(parsed_time);
+                let elapsed_hours = elapsed.num_seconds() as f64 / 3600.0;
+
+                let item = crate::search::ranker::MemoryItem {
+                    content: raw_text.clone(),
                     similarity,
-                    timestamp,
+                    elapsed_hours,
                     importance,
-                });
+                    success_rate: 1.0,
+                };
+                let score = crate::search::ranker::Ranker::score(&item, 0.5, 0.3, 0.2, 0.0);
+
+                facts_with_scores.push((
+                    SemanticFact {
+                        node_id,
+                        raw_text,
+                        similarity,
+                        timestamp,
+                        importance,
+                    },
+                    score,
+                ));
             }
         }
 
-        // Sort by similarity descending
-        facts.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by ranker score descending
+        facts_with_scores.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        Ok(facts)
+        let sorted_facts = facts_with_scores.into_iter().map(|(fact, _)| fact).collect();
+        Ok(sorted_facts)
     }
 
     pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS semantic_metadata (
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS semantic_metadata (
                 node_id TEXT PRIMARY KEY,
                 raw_text TEXT NOT NULL,
                 embedding BLOB NOT NULL,
@@ -214,12 +243,13 @@ impl SemanticMemory {
             CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 index_data BLOB NOT NULL
-            );"
+            );",
         )?;
 
         let dimensions = 384;
         let hnsw_index = {
-            let mut stmt = conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1")?;
+            let mut stmt =
+                conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1")?;
             let mut rows = stmt.query([])?;
             if let Some(row) = rows.next()? {
                 let blob: Vec<u8> = row.get(0)?;
@@ -239,45 +269,53 @@ impl SemanticMemory {
         *self.hnsw_index.lock() = hnsw_index;
         Ok(())
     }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
 }
 
-fn rebuild_hnsw_index(conn: &Connection, dimensions: usize) -> Result<World> {
+fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Result<World> {
     log::info!("Rebuilding local HNSW index from database embeddings...");
     let mut world = World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance))?;
-    
+
     let mut stmt = conn.prepare("SELECT node_id, embedding FROM semantic_metadata")?;
     let mut rows = stmt.query([])?;
-    
+
     while let Some(row) = rows.next()? {
         let node_id: String = row.get(0)?;
         let blob: Vec<u8> = row.get(1)?;
-        
+
         let mut vector_values = Vec::new();
         for chunk in blob.chunks_exact(4) {
             let array: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
             vector_values.push(f32::from_ne_bytes(array));
         }
-        
+
         let mapping_id = get_or_create_mapping_id(conn, &node_id)?;
         let vector = Vector::new_f32(&vector_values);
         world.insert_vector(mapping_id, vector)?;
     }
-    
+
     let dumped = world.dump()?;
     conn.execute(
         "INSERT OR REPLACE INTO semantic_hnsw_index (id, index_data) VALUES (1, ?1)",
         params![dumped],
     )?;
-    
+
     Ok(world)
 }
 
 fn get_or_create_mapping_id(conn: &Connection, node_id: &str) -> Result<u32> {
-    let mapping_id: Option<u32> = conn.query_row(
-        "SELECT id FROM semantic_vector_mapping WHERE node_id = ?1",
-        params![node_id],
-        |row| row.get(0),
-    ).ok();
+    let mapping_id: Option<u32> = conn
+        .query_row(
+            "SELECT id FROM semantic_vector_mapping WHERE node_id = ?1",
+            params![node_id],
+            |row| row.get(0),
+        )
+        .ok();
 
     if let Some(id) = mapping_id {
         Ok(id)

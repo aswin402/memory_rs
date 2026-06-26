@@ -1,8 +1,8 @@
 use anyhow::Result;
-use std::path::Path;
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpisodeLog {
@@ -48,7 +48,9 @@ impl EpisodicMemory {
     pub fn new(db_path: &Path) -> Result<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS episodic_logs (
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            CREATE TABLE IF NOT EXISTS episodic_logs (
                 id TEXT PRIMARY KEY,
                 task_description TEXT NOT NULL,
                 execution_status TEXT NOT NULL,
@@ -78,7 +80,7 @@ impl EpisodicMemory {
                 average_latency REAL NOT NULL DEFAULT 0.0,
                 last_used TEXT NOT NULL,
                 PRIMARY KEY (tool_name, model_name, task_type)
-            );"
+            );",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -169,19 +171,21 @@ impl EpisodicMemory {
     pub fn record_tool_performance(&self, rec: ToolPerformanceRecord) -> Result<()> {
         let conn = self.conn.lock();
         // Check if record exists
-        let existing: Option<(i64, i64, f64)> = conn.query_row(
-            "SELECT success_count, failure_count, average_latency FROM tool_performance 
+        let existing: Option<(i64, i64, f64)> = conn
+            .query_row(
+                "SELECT success_count, failure_count, average_latency FROM tool_performance 
              WHERE tool_name = ?1 AND model_name = ?2 AND task_type = ?3",
-            params![rec.tool_name, rec.model_name, rec.task_type],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).ok();
+                params![rec.tool_name, rec.model_name, rec.task_type],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .ok();
 
         if let Some((s_count, f_count, avg_lat)) = existing {
             let new_s = s_count + rec.success_count;
             let new_f = f_count + rec.failure_count;
             let total_runs = new_s + new_f;
             let run_lat = rec.average_latency;
-            
+
             // Calculate new average running latency
             let new_lat = if total_runs > 0 {
                 let current_total_lat = (s_count + f_count) as f64 * avg_lat;
@@ -194,7 +198,15 @@ impl EpisodicMemory {
                 "UPDATE tool_performance 
                  SET success_count = ?1, failure_count = ?2, average_latency = ?3, last_used = ?4 
                  WHERE tool_name = ?5 AND model_name = ?6 AND task_type = ?7",
-                params![new_s, new_f, new_lat, rec.last_used, rec.tool_name, rec.model_name, rec.task_type],
+                params![
+                    new_s,
+                    new_f,
+                    new_lat,
+                    rec.last_used,
+                    rec.tool_name,
+                    rec.model_name,
+                    rec.task_type
+                ],
             )?;
         } else {
             conn.execute(
@@ -238,7 +250,18 @@ impl EpisodicMemory {
     }
 
     pub fn switch_connection(&self, db_path: &Path) -> Result<()> {
-        *self.conn.lock() = Connection::open(db_path)?;
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;",
+        )?;
+        *self.conn.lock() = conn;
+        Ok(())
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         Ok(())
     }
 }

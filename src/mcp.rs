@@ -1,22 +1,18 @@
 use anyhow::Result;
 use rmcp::{
-    handler::server::router::tool::ToolRouter,
-    handler::server::wrapper::Parameters,
-    model::*,
-    tool, tool_handler, tool_router,
-    ErrorData as McpError,
-    ServiceExt,
+    ErrorData as McpError, ServiceExt, handler::server::router::tool::ToolRouter,
+    handler::server::wrapper::Parameters, model::*, tool, tool_handler, tool_router,
 };
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::io::{stdin, stdout};
 
 use crate::coordinator::MemoryCoordinator;
-use crate::layers::graph::{Entity, Relation, AddObservationsInput, DeleteObservationsInput};
-use crate::layers::episodic::{EpisodeLog, ReflectionItem, ToolPerformanceRecord};
 use crate::layers::codebase::{CodeElement, RepositoryEvolution};
+use crate::layers::episodic::{EpisodeLog, ReflectionItem, ToolPerformanceRecord};
+use crate::layers::graph::{AddObservationsInput, DeleteObservationsInput, Entity, Relation};
 use crate::layers::shared::SharedMemoryItem;
-use tree_sitter::{Parser, Node};
+use tree_sitter::{Node, Parser};
 
 // ==================== WRAPPER STRUCTS FOR INPUTS ====================
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -35,122 +31,140 @@ pub struct AddObservationsWrapper {
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteEntitiesInput {
-    pub entityNames: Vec<String>,
+    pub entity_names: Vec<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteObservationsWrapper {
     pub deletions: Vec<DeleteObservationsInput>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteRelationsInput {
     pub relations: Vec<Relation>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct EmptyInput {
     pub dummy: Option<bool>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchNodesInput {
     pub query: String,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenNodesInput {
     pub names: Vec<String>,
 }
 
 // Extended cognitive memory inputs
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexCodebaseInput {
     pub path: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct QueryCodeGraphInput {
-    pub filePath: Option<String>,
+    pub file_path: Option<String>,
     pub query: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEpisodeInput {
     pub id: Option<String>,
-    pub taskDescription: String,
-    pub executionStatus: String,
-    pub stepsTaken: String,
-    pub errorMessage: Option<String>,
+    pub task_description: String,
+    pub execution_status: String,
+    pub steps_taken: String,
+    pub error_message: Option<String>,
     pub reflection: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LogReflectionInput {
-    pub taskDescription: String,
+    pub task_description: String,
     pub status: String,
-    pub attemptNumber: i64,
-    pub stepsTaken: String,
-    pub errorEncountered: Option<String>,
-    pub rootCause: Option<String>,
-    pub solutionApplied: Option<String>,
+    pub attempt_number: i64,
+    pub steps_taken: String,
+    pub error_encountered: Option<String>,
+    pub root_cause: Option<String>,
+    pub solution_applied: Option<String>,
     pub reflection: String,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrieveReflectionsInput {
     pub query: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordToolPerfInput {
-    pub toolName: String,
-    pub modelName: String,
-    pub taskType: String,
-    pub successCount: i64,
-    pub failureCount: i64,
-    pub averageLatency: f64,
+    pub tool_name: String,
+    pub model_name: String,
+    pub task_type: String,
+    pub success_count: i64,
+    pub failure_count: i64,
+    pub average_latency: f64,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct QueryToolPerfInput {
-    pub taskType: String,
+    pub task_type: String,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct StoreSharedMemoryInput {
     pub key: String,
     pub value: String,
-    pub sourceAgent: String,
-    pub targetAgents: Vec<String>,
+    pub source_agent: String,
+    pub target_agents: Vec<String>,
     pub importance: Option<f64>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrieveSharedMemoryInput {
-    pub agentId: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LogRepoEvolutionInput {
-    pub filePath: String,
+    pub file_path: String,
     pub version: String,
-    pub commitHash: Option<String>,
+    pub commit_hash: Option<String>,
     pub author: Option<String>,
-    pub changeType: String, // "Added", "Modified", "Deleted"
-    pub summaryOfChanges: String,
-    pub bugIntroduced: bool,
-    pub bugFixed: bool,
+    pub change_type: String, // "Added", "Modified", "Deleted"
+    pub summary_of_changes: String,
+    pub bug_introduced: bool,
+    pub bug_fixed: bool,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct QueryRepoEvolutionInput {
-    pub filePath: Option<String>,
+    pub file_path: Option<String>,
 }
 #[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct BranchIdInput {
-    pub branchId: String,
+    pub branch_id: String,
 }
 
 // ==================== MCP SERVER DEFINITION ====================
@@ -171,7 +185,10 @@ impl MemoryServer {
 
     // -------------------- KNOWLEDGE GRAPH TOOLS --------------------
     #[tool(description = "Create multiple new entities in the knowledge graph")]
-    async fn create_entities(&self, Parameters(input): Parameters<CreateEntitiesInput>) -> Result<CallToolResult, McpError> {
+    async fn create_entities(
+        &self,
+        Parameters(input): Parameters<CreateEntitiesInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.create_entities(input.entities) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -181,8 +198,13 @@ impl MemoryServer {
         }
     }
 
-    #[tool(description = "Create multiple new relations between entities in the knowledge graph. Relations should be in active voice")]
-    async fn create_relations(&self, Parameters(input): Parameters<CreateRelationsInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Create multiple new relations between entities in the knowledge graph. Relations should be in active voice"
+    )]
+    async fn create_relations(
+        &self,
+        Parameters(input): Parameters<CreateRelationsInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.create_relations(input.relations) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -193,7 +215,10 @@ impl MemoryServer {
     }
 
     #[tool(description = "Add new observations to existing entities in the knowledge graph")]
-    async fn add_observations(&self, Parameters(input): Parameters<AddObservationsWrapper>) -> Result<CallToolResult, McpError> {
+    async fn add_observations(
+        &self,
+        Parameters(input): Parameters<AddObservationsWrapper>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.add_observations(input.observations) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -203,26 +228,43 @@ impl MemoryServer {
         }
     }
 
-    #[tool(description = "Delete multiple entities and their associated relations from the knowledge graph")]
-    async fn delete_entities(&self, Parameters(input): Parameters<DeleteEntitiesInput>) -> Result<CallToolResult, McpError> {
-        match self.coordinator.graph.delete_entities(input.entityNames) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Entities deleted successfully")])),
+    #[tool(
+        description = "Delete multiple entities and their associated relations from the knowledge graph"
+    )]
+    async fn delete_entities(
+        &self,
+        Parameters(input): Parameters<DeleteEntitiesInput>,
+    ) -> Result<CallToolResult, McpError> {
+        match self.coordinator.graph.delete_entities(input.entity_names) {
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Entities deleted successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
     #[tool(description = "Delete specific observations from entities in the knowledge graph")]
-    async fn delete_observations(&self, Parameters(input): Parameters<DeleteObservationsWrapper>) -> Result<CallToolResult, McpError> {
+    async fn delete_observations(
+        &self,
+        Parameters(input): Parameters<DeleteObservationsWrapper>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.delete_observations(input.deletions) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Observations deleted successfully")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Observations deleted successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
     #[tool(description = "Delete multiple relations from the knowledge graph")]
-    async fn delete_relations(&self, Parameters(input): Parameters<DeleteRelationsInput>) -> Result<CallToolResult, McpError> {
+    async fn delete_relations(
+        &self,
+        Parameters(input): Parameters<DeleteRelationsInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.delete_relations(input.relations) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Relations deleted successfully")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Relations deleted successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
@@ -239,7 +281,10 @@ impl MemoryServer {
     }
 
     #[tool(description = "Search for nodes in the knowledge graph based on a query")]
-    async fn search_nodes(&self, Parameters(input): Parameters<SearchNodesInput>) -> Result<CallToolResult, McpError> {
+    async fn search_nodes(
+        &self,
+        Parameters(input): Parameters<SearchNodesInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.search_nodes(&input.query) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -250,7 +295,10 @@ impl MemoryServer {
     }
 
     #[tool(description = "Open specific nodes in the knowledge graph by their names")]
-    async fn open_nodes(&self, Parameters(input): Parameters<OpenNodesInput>) -> Result<CallToolResult, McpError> {
+    async fn open_nodes(
+        &self,
+        Parameters(input): Parameters<OpenNodesInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.graph.open_nodes(input.names) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -261,24 +309,37 @@ impl MemoryServer {
     }
 
     // -------------------- CODE INTELLIGENCE TOOLS --------------------
-    #[tool(description = "Index functions, structs, enums and types in the codebase to build the codebase graph. Path defaults to '.'")]
-    async fn index_codebase(&self, Parameters(input): Parameters<IndexCodebaseInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Index functions, structs, enums and types in the codebase to build the codebase graph. Path defaults to '.'"
+    )]
+    async fn index_codebase(
+        &self,
+        Parameters(input): Parameters<IndexCodebaseInput>,
+    ) -> Result<CallToolResult, McpError> {
         let scan_path = input.path.unwrap_or_else(|| ".".to_string());
         let path = Path::new(&scan_path);
         match scan_directory(&self.coordinator, path) {
             Ok(count) => {
-                let text = format!("Successfully indexed {} source files under {:?}", count, path);
+                let text = format!(
+                    "Successfully indexed {} source files under {:?}",
+                    count, path
+                );
                 Ok(CallToolResult::success(vec![Content::text(text)]))
             }
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Query structural elements (structs, functions, impls) and calling patterns indexed in the codebase")]
-    async fn query_code_graph(&self, Parameters(input): Parameters<QueryCodeGraphInput>) -> Result<CallToolResult, McpError> {
-        let file_path = input.filePath.unwrap_or_default();
+    #[tool(
+        description = "Query structural elements (structs, functions, impls) and calling patterns indexed in the codebase"
+    )]
+    async fn query_code_graph(
+        &self,
+        Parameters(input): Parameters<QueryCodeGraphInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let file_path = input.file_path.unwrap_or_default();
         let query = input.query.unwrap_or_default();
-        
+
         match self.coordinator.codebase.query_elements(&file_path, &query) {
             Ok(elements) => {
                 let text = serde_json::to_string_pretty(&elements).unwrap_or_default();
@@ -289,53 +350,72 @@ impl MemoryServer {
     }
 
     // -------------------- EPISODIC LEARNING & REFLECTIONS --------------------
-    #[tool(description = "Log an execution episode: details tasks attempted, execution logs, status and reflections")]
-    async fn log_execution_episode(&self, Parameters(input): Parameters<LogEpisodeInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Log an execution episode: details tasks attempted, execution logs, status and reflections"
+    )]
+    async fn log_execution_episode(
+        &self,
+        Parameters(input): Parameters<LogEpisodeInput>,
+    ) -> Result<CallToolResult, McpError> {
         let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let created_at = chrono::Utc::now().to_rfc3339();
-        
+
         let ep = EpisodeLog {
             id,
-            task_description: input.taskDescription,
-            execution_status: input.executionStatus,
-            steps_taken: input.stepsTaken,
-            error_message: input.errorMessage,
+            task_description: input.task_description,
+            execution_status: input.execution_status,
+            steps_taken: input.steps_taken,
+            error_message: input.error_message,
             reflection: input.reflection,
             created_at,
         };
 
         match self.coordinator.episodic.log_episode(ep) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Episode logged successfully")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Episode logged successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Store a reflection memory summarizing what worked, what failed, why, and error analysis")]
-    async fn log_reflection(&self, Parameters(input): Parameters<LogReflectionInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Store a reflection memory summarizing what worked, what failed, why, and error analysis"
+    )]
+    async fn log_reflection(
+        &self,
+        Parameters(input): Parameters<LogReflectionInput>,
+    ) -> Result<CallToolResult, McpError> {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
 
         let item = ReflectionItem {
             id,
-            task_description: input.taskDescription,
+            task_description: input.task_description,
             status: input.status,
-            attempt_number: input.attemptNumber,
-            steps_taken: input.stepsTaken,
-            error_encountered: input.errorEncountered,
-            root_cause: input.rootCause,
-            solution_applied: input.solutionApplied,
+            attempt_number: input.attempt_number,
+            steps_taken: input.steps_taken,
+            error_encountered: input.error_encountered,
+            root_cause: input.root_cause,
+            solution_applied: input.solution_applied,
             reflection: input.reflection,
             created_at,
         };
 
         match self.coordinator.episodic.log_reflection(item) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Reflection logged successfully")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Reflection logged successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Retrieve reflections to guide current attempts based on query parameters")]
-    async fn retrieve_episodic_reflections(&self, Parameters(input): Parameters<RetrieveReflectionsInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Retrieve reflections to guide current attempts based on query parameters"
+    )]
+    async fn retrieve_episodic_reflections(
+        &self,
+        Parameters(input): Parameters<RetrieveReflectionsInput>,
+    ) -> Result<CallToolResult, McpError> {
         let query = input.query.unwrap_or_default();
         match self.coordinator.episodic.get_reflections(&query) {
             Ok(res) => {
@@ -348,27 +428,41 @@ impl MemoryServer {
 
     // -------------------- TOOL PERFORMANCE METRICS --------------------
     #[tool(description = "Record the success rates and latencies of an LLM or specific tool usage")]
-    async fn record_tool_performance(&self, Parameters(input): Parameters<RecordToolPerfInput>) -> Result<CallToolResult, McpError> {
+    async fn record_tool_performance(
+        &self,
+        Parameters(input): Parameters<RecordToolPerfInput>,
+    ) -> Result<CallToolResult, McpError> {
         let last_used = chrono::Utc::now().to_rfc3339();
         let rec = ToolPerformanceRecord {
-            tool_name: input.toolName,
-            model_name: input.modelName,
-            task_type: input.taskType,
-            success_count: input.successCount,
-            failure_count: input.failureCount,
-            average_latency: input.averageLatency,
+            tool_name: input.tool_name,
+            model_name: input.model_name,
+            task_type: input.task_type,
+            success_count: input.success_count,
+            failure_count: input.failure_count,
+            average_latency: input.average_latency,
             last_used,
         };
 
         match self.coordinator.episodic.record_tool_performance(rec) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Tool performance metrics recorded")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Tool performance metrics recorded",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Query tool performance logs to recommend optimal tools/models for specific task types")]
-    async fn query_tool_performance(&self, Parameters(input): Parameters<QueryToolPerfInput>) -> Result<CallToolResult, McpError> {
-        match self.coordinator.episodic.query_tool_performance(&input.taskType) {
+    #[tool(
+        description = "Query tool performance logs to recommend optimal tools/models for specific task types"
+    )]
+    async fn query_tool_performance(
+        &self,
+        Parameters(input): Parameters<QueryToolPerfInput>,
+    ) -> Result<CallToolResult, McpError> {
+        match self
+            .coordinator
+            .episodic
+            .query_tool_performance(&input.task_type)
+        {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -379,26 +473,36 @@ impl MemoryServer {
 
     // -------------------- MULTI-AGENT SHARED MEMORY --------------------
     #[tool(description = "Store a key-value memory shared across target agent IDs")]
-    async fn store_shared_team_memory(&self, Parameters(input): Parameters<StoreSharedMemoryInput>) -> Result<CallToolResult, McpError> {
+    async fn store_shared_team_memory(
+        &self,
+        Parameters(input): Parameters<StoreSharedMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let item = SharedMemoryItem {
             key: input.key,
             value: input.value,
-            source_agent: input.sourceAgent,
-            target_agents: input.targetAgents,
+            source_agent: input.source_agent,
+            target_agents: input.target_agents,
             importance: input.importance.unwrap_or(1.0),
             timestamp,
         };
 
         match self.coordinator.shared.store_shared_memory(item) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Shared team memory stored successfully")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Shared team memory stored successfully",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Retrieve shared team memories targetted at a specific agent ID (or wildcard '*')")]
-    async fn retrieve_shared_team_memory(&self, Parameters(input): Parameters<RetrieveSharedMemoryInput>) -> Result<CallToolResult, McpError> {
-        let agent_id = input.agentId.unwrap_or_default();
+    #[tool(
+        description = "Retrieve shared team memories targetted at a specific agent ID (or wildcard '*')"
+    )]
+    async fn retrieve_shared_team_memory(
+        &self,
+        Parameters(input): Parameters<RetrieveSharedMemoryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let agent_id = input.agent_id.unwrap_or_default();
         match self.coordinator.shared.retrieve_shared_memory(&agent_id) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -409,30 +513,40 @@ impl MemoryServer {
     }
 
     // -------------------- REPOSITORY EVOLUTION --------------------
-    #[tool(description = "Log file changes, refactoring records, commits, versions, and bug status metrics")]
-    async fn log_repository_evolution(&self, Parameters(input): Parameters<LogRepoEvolutionInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Log file changes, refactoring records, commits, versions, and bug status metrics"
+    )]
+    async fn log_repository_evolution(
+        &self,
+        Parameters(input): Parameters<LogRepoEvolutionInput>,
+    ) -> Result<CallToolResult, McpError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let evo = RepositoryEvolution {
-            file_path: input.filePath,
+            file_path: input.file_path,
             version: input.version,
-            commit_hash: input.commitHash,
+            commit_hash: input.commit_hash,
             author: input.author,
-            change_type: input.changeType,
-            summary_of_changes: input.summaryOfChanges,
-            bug_introduced: input.bugIntroduced,
-            bug_fixed: input.bugFixed,
+            change_type: input.change_type,
+            summary_of_changes: input.summary_of_changes,
+            bug_introduced: input.bug_introduced,
+            bug_fixed: input.bug_fixed,
             timestamp,
         };
 
         match self.coordinator.codebase.log_evolution(evo) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Repository evolution stage logged")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Repository evolution stage logged",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
     #[tool(description = "Query repository file history and change statistics")]
-    async fn query_repository_evolution(&self, Parameters(input): Parameters<QueryRepoEvolutionInput>) -> Result<CallToolResult, McpError> {
-        let file_path = input.filePath.unwrap_or_default();
+    async fn query_repository_evolution(
+        &self,
+        Parameters(input): Parameters<QueryRepoEvolutionInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let file_path = input.file_path.unwrap_or_default();
         match self.coordinator.codebase.query_evolution(&file_path) {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -442,26 +556,48 @@ impl MemoryServer {
         }
     }
 
-    #[tool(description = "Create an isolated database branch for subagent/task execution. Branch ID must be unique")]
-    async fn create_database_branch(&self, Parameters(input): Parameters<BranchIdInput>) -> Result<CallToolResult, McpError> {
-        match self.coordinator.create_branch(&input.branchId) {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text(format!("Successfully created database branch: {}", input.branchId))])),
+    #[tool(
+        description = "Create an isolated database branch for subagent/task execution. Branch ID must be unique"
+    )]
+    async fn create_database_branch(
+        &self,
+        Parameters(input): Parameters<BranchIdInput>,
+    ) -> Result<CallToolResult, McpError> {
+        match self.coordinator.create_branch(&input.branch_id) {
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Successfully created database branch: {}",
+                input.branch_id
+            ))])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Commit changes from the active database branch to the main database and delete the branch")]
-    async fn commit_database_branch(&self, _input: Parameters<EmptyInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Commit changes from the active database branch to the main database and delete the branch"
+    )]
+    async fn commit_database_branch(
+        &self,
+        _input: Parameters<EmptyInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.commit_branch() {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Successfully committed database branch")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Successfully committed database branch",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
 
-    #[tool(description = "Roll back changes from the active database branch, restoring the main database state and deleting the branch")]
-    async fn rollback_database_branch(&self, _input: Parameters<EmptyInput>) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Roll back changes from the active database branch, restoring the main database state and deleting the branch"
+    )]
+    async fn rollback_database_branch(
+        &self,
+        _input: Parameters<EmptyInput>,
+    ) -> Result<CallToolResult, McpError> {
         match self.coordinator.rollback_branch() {
-            Ok(_) => Ok(CallToolResult::success(vec![Content::text("Successfully rolled back database branch")])),
+            Ok(_) => Ok(CallToolResult::success(vec![Content::text(
+                "Successfully rolled back database branch",
+            )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
@@ -497,7 +633,10 @@ fn get_node_signature(node: &Node, source_bytes: &[u8], body_delim: &str) -> Str
 fn node_name(node: &Node, source_bytes: &[u8]) -> Option<String> {
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
-        if child.kind() == "identifier" || child.kind() == "type_identifier" || child.kind() == "property_identifier" {
+        if child.kind() == "identifier"
+            || child.kind() == "type_identifier"
+            || child.kind() == "property_identifier"
+        {
             if let Ok(name) = child.utf8_text(source_bytes) {
                 return Some(name.to_string());
             }
@@ -529,7 +668,11 @@ fn traverse_and_index(
         "function_item" => {
             if let Some(n) = node_name(&node, source_bytes) {
                 name = Some(n);
-                element_type = Some(if parent_id.is_some() { "Method".to_string() } else { "Function".to_string() });
+                element_type = Some(if parent_id.is_some() {
+                    "Method".to_string()
+                } else {
+                    "Function".to_string()
+                });
                 signature = get_node_signature(&node, source_bytes, "{");
             }
         }
@@ -572,7 +715,11 @@ fn traverse_and_index(
         "function_definition" => {
             if let Some(n) = node_name(&node, source_bytes) {
                 name = Some(n);
-                element_type = Some(if parent_id.is_some() { "Method".to_string() } else { "Function".to_string() });
+                element_type = Some(if parent_id.is_some() {
+                    "Method".to_string()
+                } else {
+                    "Function".to_string()
+                });
                 signature = get_node_signature(&node, source_bytes, ":");
             }
         }
@@ -588,7 +735,11 @@ fn traverse_and_index(
         "function_declaration" => {
             if let Some(n) = node_name(&node, source_bytes) {
                 name = Some(n);
-                element_type = Some(if parent_id.is_some() { "Method".to_string() } else { "Function".to_string() });
+                element_type = Some(if parent_id.is_some() {
+                    "Method".to_string()
+                } else {
+                    "Function".to_string()
+                });
                 signature = get_node_signature(&node, source_bytes, "{");
             }
         }
@@ -653,16 +804,16 @@ fn traverse_and_index(
 fn parse_and_index_file_fallback(coordinator: &MemoryCoordinator, file_path: &Path) -> Result<()> {
     let content = std::fs::read_to_string(file_path)?;
     let relative_path = file_path.to_string_lossy().to_string();
-    
+
     let lines: Vec<&str> = content.lines().collect();
     for (idx, line) in lines.iter().enumerate() {
         let line_num = (idx + 1) as i64;
         let trimmed = line.trim();
-        
+
         let mut element_type = None;
         let mut name = None;
         let mut signature = String::new();
-        
+
         if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") {
             element_type = Some("Function".to_string());
             let parts: Vec<&str> = trimmed.split('(').collect();
@@ -706,7 +857,7 @@ fn parse_and_index_file_fallback(coordinator: &MemoryCoordinator, file_path: &Pa
             name = Some(enum_name.to_string());
             signature = parts[0].trim().to_string();
         }
-        
+
         if let (Some(el_type), Some(el_name)) = (element_type, name) {
             let el_id = format!("{}:{}:{}", relative_path, el_name, line_num);
             let el = CodeElement {
@@ -727,7 +878,11 @@ fn parse_and_index_file_fallback(coordinator: &MemoryCoordinator, file_path: &Pa
 }
 
 fn parse_and_index_file(coordinator: &MemoryCoordinator, file_path: &Path) -> Result<()> {
-    let ext = file_path.extension().unwrap_or_default().to_string_lossy().to_string();
+    let ext = file_path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     if ext != "rs" && ext != "py" && ext != "js" && ext != "jsx" && ext != "ts" && ext != "tsx" {
         return parse_and_index_file_fallback(coordinator, file_path);
     }
@@ -759,7 +914,13 @@ fn parse_and_index_file(coordinator: &MemoryCoordinator, file_path: &Path) -> Re
     }
 
     if let Some(tree) = parser.parse(&content, None) {
-        traverse_and_index(coordinator, &relative_path, tree.root_node(), source_bytes, None)?;
+        traverse_and_index(
+            coordinator,
+            &relative_path,
+            tree.root_node(),
+            source_bytes,
+            None,
+        )?;
     }
 
     Ok(())
@@ -773,12 +934,23 @@ fn scan_directory(coordinator: &MemoryCoordinator, dir: &Path) -> Result<i64> {
             let path = entry.path();
             if path.is_dir() {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
-                if name != "target" && name != ".git" && name != "external" && name != "node_modules" {
+                if name != "target"
+                    && name != ".git"
+                    && name != "external"
+                    && name != "node_modules"
+                {
                     count += scan_directory(coordinator, &path)?;
                 }
             } else {
                 let ext = path.extension().unwrap_or_default().to_string_lossy();
-                if ext == "rs" || ext == "py" || ext == "js" || ext == "jsx" || ext == "ts" || ext == "tsx" || ext == "go" {
+                if ext == "rs"
+                    || ext == "py"
+                    || ext == "js"
+                    || ext == "jsx"
+                    || ext == "ts"
+                    || ext == "tsx"
+                    || ext == "go"
+                {
                     if let Err(e) = parse_and_index_file(coordinator, &path) {
                         log::error!("Failed to index file {:?}: {}", path, e);
                     } else {
@@ -791,13 +963,30 @@ fn scan_directory(coordinator: &MemoryCoordinator, dir: &Path) -> Result<i64> {
     Ok(count)
 }
 
-pub async fn run_server(coordinator: Arc<MemoryCoordinator>) -> Result<()> {
+pub async fn run_server(
+    coordinator: Arc<MemoryCoordinator>,
+    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
     let service = MemoryServer::new(coordinator);
     let transport = (stdin(), stdout());
-    
+
     log::info!("Serving openmemory_rs Server over stdio...");
-    service.serve(transport).await?.waiting().await?;
     
+    tokio::select! {
+        res = async {
+            let running = service.serve(transport).await?;
+            running.waiting().await?;
+            Ok::<(), anyhow::Error>(())
+        } => {
+            if let Err(e) = res {
+                log::error!("rmcp server error: {:?}", e);
+            }
+        }
+        _ = shutdown_rx.recv() => {
+            log::info!("Shutting down Stdio transport...");
+        }
+    }
+
     Ok(())
 }
 
@@ -811,14 +1000,18 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 pub struct McpServiceHandler {
     writer: Arc<tokio::sync::Mutex<tokio::io::WriteHalf<tokio::io::DuplexStream>>>,
-    reader: Arc<tokio::sync::Mutex<tokio::io::BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>>,
+    reader:
+        Arc<tokio::sync::Mutex<tokio::io::BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>>,
 }
 
 #[tonic::async_trait]
 impl McpService for McpServiceHandler {
-    async fn call(&self, request: tonic::Request<McpRequest>) -> Result<tonic::Response<McpResponse>, tonic::Status> {
+    async fn call(
+        &self,
+        request: tonic::Request<McpRequest>,
+    ) -> Result<tonic::Response<McpResponse>, tonic::Status> {
         let req = request.into_inner();
-        
+
         let rpc_req = if !req.has_id {
             serde_json::json!({
                 "jsonrpc": "2.0",
@@ -833,15 +1026,25 @@ impl McpService for McpServiceHandler {
                 "params": serde_json::from_str::<serde_json::Value>(&req.params_json).unwrap_or(serde_json::Value::Null)
             })
         };
-        
-        let req_str = format!("{}\n", serde_json::to_string(&rpc_req).map_err(|e| tonic::Status::invalid_argument(e.to_string()))?);
-        
+
+        let req_str = format!(
+            "{}\n",
+            serde_json::to_string(&rpc_req)
+                .map_err(|e| tonic::Status::invalid_argument(e.to_string()))?
+        );
+
         let mut writer_lock = self.writer.lock().await;
         let mut reader_lock = self.reader.lock().await;
-        
-        writer_lock.write_all(req_str.as_bytes()).await.map_err(|e| tonic::Status::internal(e.to_string()))?;
-        writer_lock.flush().await.map_err(|e| tonic::Status::internal(e.to_string()))?;
-        
+
+        writer_lock
+            .write_all(req_str.as_bytes())
+            .await
+            .map_err(|e| tonic::Status::internal(e.to_string()))?;
+        writer_lock
+            .flush()
+            .await
+            .map_err(|e| tonic::Status::internal(e.to_string()))?;
+
         if !req.has_id {
             return Ok(tonic::Response::new(McpResponse {
                 result_json: String::new(),
@@ -849,16 +1052,27 @@ impl McpService for McpServiceHandler {
                 id: 0,
             }));
         }
-        
+
         let mut line = String::new();
-        reader_lock.read_line(&mut line).await.map_err(|e| tonic::Status::internal(e.to_string()))?;
-        
-        let resp_val: serde_json::Value = serde_json::from_str(&line).map_err(|e| tonic::Status::internal(format!("Failed to parse JSON-RPC response: {}", e)))?;
-        
+        reader_lock
+            .read_line(&mut line)
+            .await
+            .map_err(|e| tonic::Status::internal(e.to_string()))?;
+
+        let resp_val: serde_json::Value = serde_json::from_str(&line).map_err(|e| {
+            tonic::Status::internal(format!("Failed to parse JSON-RPC response: {}", e))
+        })?;
+
         let id = resp_val.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-        let result_json = resp_val.get("result").map(|v| v.to_string()).unwrap_or_default();
-        let error_json = resp_val.get("error").map(|v| v.to_string()).unwrap_or_default();
-        
+        let result_json = resp_val
+            .get("result")
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let error_json = resp_val
+            .get("error")
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+
         Ok(tonic::Response::new(McpResponse {
             result_json,
             error_json,
@@ -867,9 +1081,13 @@ impl McpService for McpServiceHandler {
     }
 }
 
-pub async fn run_grpc_server(coordinator: Arc<MemoryCoordinator>, port: u16) -> Result<()> {
+pub async fn run_grpc_server(
+    coordinator: Arc<MemoryCoordinator>,
+    port: u16,
+    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
+) -> Result<()> {
     let (client_half, server_half) = tokio::io::duplex(1024 * 1024);
-    
+
     let service = MemoryServer::new(coordinator);
     tokio::spawn(async move {
         let (r, w) = tokio::io::split(server_half);
@@ -877,21 +1095,26 @@ pub async fn run_grpc_server(coordinator: Arc<MemoryCoordinator>, port: u16) -> 
             log::error!("In-memory rmcp server crashed: {:?}", e);
         }
     });
-    
+
     let (client_reader, client_writer) = tokio::io::split(client_half);
     let handler = McpServiceHandler {
         writer: Arc::new(tokio::sync::Mutex::new(client_writer)),
-        reader: Arc::new(tokio::sync::Mutex::new(tokio::io::BufReader::new(client_reader))),
+        reader: Arc::new(tokio::sync::Mutex::new(tokio::io::BufReader::new(
+            client_reader,
+        ))),
     };
-    
+
     let addr = format!("127.0.0.1:{}", port).parse()?;
     log::info!("gRPC MCP server listening on {}", addr);
-    
+
     tonic::transport::Server::builder()
         .add_service(McpServiceServer::new(handler))
-        .serve(addr)
+        .serve_with_shutdown(addr, async move {
+            let _ = shutdown_rx.recv().await;
+            log::info!("Shutting down gRPC transport...");
+        })
         .await?;
-        
+
     Ok(())
 }
 
@@ -947,8 +1170,12 @@ class MyTSClass {
         parse_and_index_file(&coordinator, &ts_path)?;
 
         // Query indexed elements
-        let js_elements = coordinator.codebase.query_elements(js_path.to_str().unwrap(), "")?;
-        let ts_elements = coordinator.codebase.query_elements(ts_path.to_str().unwrap(), "")?;
+        let js_elements = coordinator
+            .codebase
+            .query_elements(js_path.to_str().unwrap(), "")?;
+        let ts_elements = coordinator
+            .codebase
+            .query_elements(ts_path.to_str().unwrap(), "")?;
 
         // Cleanup temp files
         let _ = fs::remove_file(&js_path);
@@ -1011,4 +1238,3 @@ class MyTSClass {
         Ok(())
     }
 }
-

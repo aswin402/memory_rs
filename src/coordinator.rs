@@ -2,15 +2,15 @@ use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::layers::working::WorkingMemory;
-use crate::layers::episodic::EpisodicMemory;
-use crate::layers::semantic::SemanticMemory;
-use crate::layers::graph::GraphMemory;
 use crate::layers::codebase::CodebaseMemory;
+use crate::layers::episodic::EpisodicMemory;
+use crate::layers::graph::GraphMemory;
+use crate::layers::semantic::SemanticMemory;
 use crate::layers::shared::SharedMemory;
+use crate::layers::working::WorkingMemory;
 
-use parking_lot::Mutex;
 use anyhow::Context;
+use parking_lot::Mutex;
 
 pub struct MemoryCoordinator {
     pub working: Arc<WorkingMemory>,
@@ -63,13 +63,19 @@ impl MemoryCoordinator {
         self.shared.switch_connection(path)?;
 
         *active = Some(branch_id.to_string());
-        log::info!("Switched memory coordinator to database branch: {}", branch_id);
+        log::info!(
+            "Switched memory coordinator to database branch: {}",
+            branch_id
+        );
         Ok(())
     }
 
     pub fn commit_branch(&self) -> Result<()> {
         let mut active = self.active_branch.lock();
-        let branch_id = active.as_ref().context("No active branch to commit.")?.clone();
+        let branch_id = active
+            .as_ref()
+            .context("No active branch to commit.")?
+            .clone();
         let branch_path = format!("{}.branch_{}", self.base_db_path, branch_id);
 
         // Switch connections to an in-memory database to release file locks on both the base and branch files
@@ -99,7 +105,10 @@ impl MemoryCoordinator {
 
     pub fn rollback_branch(&self) -> Result<()> {
         let mut active = self.active_branch.lock();
-        let branch_id = active.as_ref().context("No active branch to rollback.")?.clone();
+        let branch_id = active
+            .as_ref()
+            .context("No active branch to rollback.")?
+            .clone();
         let branch_path = format!("{}.branch_{}", self.base_db_path, branch_id);
 
         // Switch connections back to the base database
@@ -117,6 +126,16 @@ impl MemoryCoordinator {
 
         *active = None;
         log::info!("Rolled back database branch: {}", branch_id);
+        Ok(())
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        log::info!("Flushing SQLite WAL checkpoints for all layers...");
+        self.episodic.checkpoint()?;
+        self.semantic.checkpoint()?;
+        self.graph.checkpoint()?;
+        self.codebase.checkpoint()?;
+        self.shared.checkpoint()?;
         Ok(())
     }
 }
