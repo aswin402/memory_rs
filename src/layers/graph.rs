@@ -118,13 +118,13 @@ impl GraphMemory {
 
         for relation in relations {
             let exists: bool = conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6)",
+                "SELECT EXISTS(SELECT 1 FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6 AND valid_until IS NULL)",
                 params![relation.from, relation.to, relation.relation_type, user_id, session_id, agent_id],
                 |row| row.get(0),
             )?;
             if !exists {
                 conn.execute(
-                    "INSERT INTO graph_edges (from_name, to_name, relation_type, user_id, session_id, agent_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT INTO graph_edges (from_name, to_name, relation_type, user_id, session_id, agent_id, confidence) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1.0)",
                     params![relation.from, relation.to, relation.relation_type, user_id, session_id, agent_id],
                 )?;
                 created.push(relation);
@@ -187,7 +187,7 @@ impl GraphMemory {
         for name in names {
             conn.execute("DELETE FROM graph_nodes WHERE name = ?1 AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4", params![name, user_id, session_id, agent_id])?;
             conn.execute(
-                "DELETE FROM graph_edges WHERE (from_name = ?1 OR to_name = ?1) AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4",
+                "UPDATE graph_edges SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE (from_name = ?1 OR to_name = ?1) AND user_id = ?2 AND session_id = ?3 AND agent_id = ?4 AND valid_until IS NULL",
                 params![name, user_id, session_id, agent_id],
             )?;
         }
@@ -233,7 +233,7 @@ impl GraphMemory {
 
         for rel in relations {
             conn.execute(
-                "DELETE FROM graph_edges WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6",
+                "UPDATE graph_edges SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE from_name = ?1 AND to_name = ?2 AND relation_type = ?3 AND user_id = ?4 AND session_id = ?5 AND agent_id = ?6 AND valid_until IS NULL",
                 params![rel.from, rel.to, rel.relation_type, user_id, session_id, agent_id],
             )?;
         }
@@ -260,7 +260,7 @@ impl GraphMemory {
         }
 
         let mut stmt_edges =
-            conn.prepare("SELECT from_name, to_name, relation_type FROM graph_edges WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')")?;
+            conn.prepare("SELECT from_name, to_name, relation_type FROM graph_edges WHERE (?1 IS NULL OR user_id = ?1 OR user_id = '*') AND (?2 IS NULL OR session_id = ?2 OR session_id = '*') AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*') AND valid_until IS NULL")?;
         let mut edge_rows = stmt_edges.query(params![scope.user_id, scope.session_id, scope.agent_id])?;
         let mut relations = Vec::new();
         while let Some(row) = edge_rows.next()? {
@@ -315,7 +315,8 @@ impl GraphMemory {
              ))
              AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
              AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
-             AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
+             AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')
+             AND valid_until IS NULL"
         )?;
         let mut edge_rows = stmt_edges.query(params![query_pattern, scope.user_id, scope.session_id, scope.agent_id])?;
         let mut relations = Vec::new();
@@ -369,7 +370,8 @@ impl GraphMemory {
                  WHERE (from_name IN ({0}) OR to_name IN ({1}))
                    AND (?1 IS NULL OR user_id = ?1 OR user_id = '*')
                    AND (?2 IS NULL OR session_id = ?2 OR session_id = '*')
-                   AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')",
+                   AND (?3 IS NULL OR agent_id = ?3 OR agent_id = '*')
+                   AND valid_until IS NULL",
                 placeholders_from, placeholders_to
             );
             let mut stmt_edges = conn.prepare(&sql)?;
@@ -475,4 +477,94 @@ pub struct AddObservationsOutput {
 pub struct DeleteObservationsInput {
     pub entity_name: String,
     pub observations: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layers::MemoryScope;
+    use std::fs;
+
+    #[test]
+    fn test_graph_edges_bitemporal_behavior() -> Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_graph_edges_bitemporal.db");
+        if db_path.exists() {
+            let _ = fs::remove_file(&db_path);
+        }
+
+        let graph = GraphMemory::new(&db_path)?;
+        let scope = MemoryScope {
+            user_id: Some("test_user".to_string()),
+            session_id: Some("test_session".to_string()),
+            agent_id: Some("test_agent".to_string()),
+        };
+
+        // 1. Create entities
+        let entity_a = Entity {
+            name: "A".to_string(),
+            entity_type: "Person".to_string(),
+            observations: vec!["Obs 1".to_string()],
+        };
+        let entity_b = Entity {
+            name: "B".to_string(),
+            entity_type: "Person".to_string(),
+            observations: vec!["Obs 2".to_string()],
+        };
+        graph.create_entities(vec![entity_a, entity_b], &scope)?;
+
+        // 2. Create a relation (edge)
+        let rel = Relation {
+            from: "A".to_string(),
+            to: "B".to_string(),
+            relation_type: "friends_with".to_string(),
+        };
+        let created = graph.create_relations(vec![rel.clone()], &scope)?;
+        assert_eq!(created.len(), 1);
+
+        // Verify it is returned in read_graph
+        let kg = graph.read_graph(&scope)?;
+        assert_eq!(kg.relations.len(), 1);
+        assert_eq!(kg.relations[0].from, "A");
+        assert_eq!(kg.relations[0].to, "B");
+
+        // Verify duplicating creation is skipped (exists check works)
+        let created_dup = graph.create_relations(vec![rel.clone()], &scope)?;
+        assert_eq!(created_dup.len(), 0);
+
+        // 3. Delete the relation (should soft-delete)
+        graph.delete_relations(vec![rel.clone()], &scope)?;
+
+        // Verify read_graph now filters it out (valid_until is not null)
+        let kg_after_delete = graph.read_graph(&scope)?;
+        assert_eq!(kg_after_delete.relations.len(), 0);
+
+        // Verify search_nodes also filters it out
+        let search_kg = graph.search_nodes("A", &scope)?;
+        assert_eq!(search_kg.relations.len(), 0);
+
+        // Verify open_nodes also filters it out
+        let open_kg = graph.open_nodes(vec!["A".to_string(), "B".to_string()], &scope)?;
+        assert_eq!(open_kg.relations.len(), 0);
+
+        // Check SQL directly to ensure valid_until has been set and confidence is 1.0
+        let conn = Connection::open(&db_path)?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM graph_edges WHERE valid_until IS NOT NULL",
+            [],
+            |r| r.get(0)
+        )?;
+        assert_eq!(count, 1);
+
+        let confidence: f64 = conn.query_row(
+            "SELECT confidence FROM graph_edges WHERE from_name = 'A'",
+            [],
+            |r| r.get(0)
+        )?;
+        assert_eq!(confidence, 1.0);
+
+        // Cleanup
+        let _ = fs::remove_file(&db_path);
+        Ok(())
+    }
 }
