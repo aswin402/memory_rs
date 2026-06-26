@@ -144,8 +144,8 @@ impl SemanticMemory {
             .collect();
 
         conn.execute(
-            "INSERT OR REPLACE INTO semantic_metadata (node_id, raw_text, embedding, timestamp, importance, user_id, session_id, agent_id) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO semantic_metadata (node_id, raw_text, embedding, timestamp, importance, user_id, session_id, agent_id, valid_from) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
             params![node_id, text, blob, timestamp, importance, user_id, session_id, agent_id],
         )?;
 
@@ -215,6 +215,7 @@ impl SemanticMemory {
                 "SELECT raw_text, embedding, timestamp, importance 
                  FROM semantic_metadata 
                  WHERE node_id = ?1
+                   AND valid_until IS NULL
                    AND (?2 IS NULL OR user_id = ?2 OR user_id = '*')
                    AND (?3 IS NULL OR session_id = ?3 OR session_id = '*')
                    AND (?4 IS NULL OR agent_id = ?4 OR agent_id = '*')"
@@ -319,6 +320,7 @@ impl SemanticMemory {
              FROM semantic_fts f
              JOIN semantic_metadata m ON f.node_id = m.node_id
              WHERE semantic_fts MATCH ?1
+               AND m.valid_until IS NULL
                AND (?3 IS NULL OR m.user_id = ?3 OR m.user_id = '*')
                AND (?4 IS NULL OR m.session_id = ?4 OR m.session_id = '*')
                AND (?5 IS NULL OR m.agent_id = ?5 OR m.agent_id = '*')
@@ -437,7 +439,7 @@ fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Result<World> {
     log::info!("Rebuilding local HNSW index from database embeddings...");
     let mut world = World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance))?;
 
-    let mut stmt = conn.prepare("SELECT node_id, embedding FROM semantic_metadata")?;
+    let mut stmt = conn.prepare("SELECT node_id, embedding FROM semantic_metadata WHERE valid_until IS NULL")?;
     let mut rows = stmt.query([])?;
 
     while let Some(row) = rows.next()? {
@@ -503,3 +505,65 @@ fn calculate_cosine_similarity(v1: &[f32], v2: &[f32]) -> f64 {
         dot_product / (norm_a.sqrt() * norm_b.sqrt())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layers::MemoryScope;
+    use std::fs;
+
+    #[test]
+    fn test_semantic_bitemporal_behavior() -> Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!("test_semantic_bitemporal_{}.db", uuid::Uuid::new_v4()));
+        if db_path.exists() {
+            let _ = fs::remove_file(&db_path);
+        }
+
+        let semantic = SemanticMemory::new(&db_path)?;
+        let scope = MemoryScope::default();
+
+        // 1. Add a fact
+        semantic.add_fact("fact-1", "Rust is safe and fast", 0.9, &scope)?;
+
+        // 2. Query it to verify it is returned
+        let res_before = semantic.query_similar_facts("Rust", 10, &scope)?;
+        assert_eq!(res_before.len(), 1);
+        assert_eq!(res_before[0].node_id, "fact-1");
+
+        // 3. Mark it inactive (valid_until = now)
+        {
+            let conn = semantic.conn.lock();
+            conn.execute(
+                "UPDATE semantic_metadata SET valid_until = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE node_id = 'fact-1'",
+                [],
+            )?;
+        }
+
+        // 4. Query again - should NOT return the inactive fact
+        let res_after = semantic.query_similar_facts("Rust", 10, &scope)?;
+        assert!(res_after.is_empty(), "Inactive facts should not be queried");
+
+        // 5. Test FTS directly via search_text - should NOT return the inactive fact
+        let res_fts = semantic.search_text("Rust", 10, &scope)?;
+        assert!(res_fts.is_empty(), "Inactive facts should not be returned by FTS");
+
+        // 6. Test HNSW rebuilding
+        // Since HNSW is rebuilt on reload / connection switch if the dump is missing,
+        // let's delete the index dump and trigger switch_connection to rebuild the index.
+        {
+            let conn = semantic.conn.lock();
+            conn.execute("DELETE FROM semantic_hnsw_index WHERE id = 1", [])?;
+        }
+        semantic.switch_connection(&db_path)?;
+
+        // HNSW index is now rebuilt. Let's do a vector search directly (which queries the HNSW index first)
+        let res_vector = semantic.query_similar_facts_vector("Rust", 10, &scope)?;
+        assert!(res_vector.is_empty(), "Rebuilt HNSW index should exclude inactive facts");
+
+        // Cleanup
+        let _ = fs::remove_file(&db_path);
+        Ok(())
+    }
+}
+
