@@ -222,6 +222,25 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert!(invalidate_resp.error_json.is_empty(), "Should not return error");
     println!("Invalidate Fact Response: {}", invalidate_resp.result_json);
 
+    // 9. Test detect_and_resolve_conflicts via gRPC
+    println!("Calling detect_and_resolve_conflicts via gRPC...");
+    let conflict_params = serde_json::json!({
+        "name": "detect_and_resolve_conflicts",
+        "arguments": {
+            "strategy": "recency",
+            "dryRun": true
+        }
+    });
+    let conflict_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: conflict_params.to_string(),
+        id: 8,
+        has_id: true,
+    };
+    let conflict_resp = client.call(conflict_req).await?.into_inner();
+    assert!(conflict_resp.error_json.is_empty(), "Should not return error");
+    println!("Conflict Tool Response: {}", conflict_resp.result_json);
+
     // Kill the server process
     child.kill()?;
 
