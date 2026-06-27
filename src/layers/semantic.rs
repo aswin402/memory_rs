@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
@@ -133,7 +133,7 @@ impl SemanticMemory {
         };
 
         if embeddings.is_empty() {
-            anyhow::bail!("Failed to generate embedding");
+            return Err(MemoryError::Embedding("Failed to generate embedding".to_string()));
         }
         let vector_values = &embeddings[0]; // Vec<f32>
 
@@ -156,9 +156,9 @@ impl SemanticMemory {
         {
             let mut index = self.hnsw_index.lock();
             let vector = Vector::new_f32(vector_values);
-            index.insert_vector(mapping_id, vector)?;
+            index.insert_vector(mapping_id, vector).map_err(|e| MemoryError::Hnsw(e.to_string()))?;
 
-            let dumped = index.dump()?;
+            let dumped = index.dump().map_err(|e| MemoryError::Hnsw(e.to_string()))?;
             conn.execute(
                 "INSERT OR REPLACE INTO semantic_hnsw_index (id, index_data) VALUES (1, ?1)",
                 params![dumped],
@@ -192,7 +192,7 @@ impl SemanticMemory {
         };
 
         if embeddings.is_empty() {
-            anyhow::bail!("Failed to generate query embedding");
+            return Err(MemoryError::Embedding("Failed to generate query embedding".to_string()));
         }
         let query_vector_values = &embeddings[0]; // Vec<f32>
         let query_vector = Vector::new_f32(query_vector_values);
@@ -200,7 +200,7 @@ impl SemanticMemory {
         // Perform HNSW search (beam_width = 100)
         let candidate_ids = {
             let index = self.hnsw_index.lock();
-            index.search(&query_vector, limit, 100)?
+            index.search(&query_vector, limit, 100).map_err(|e| MemoryError::Hnsw(e.to_string()))?
         };
 
         if candidate_ids.is_empty() {
@@ -483,7 +483,7 @@ impl SemanticMemory {
             model.embed(vec![text.to_string()], None)?
         };
         if embeddings.is_empty() {
-            anyhow::bail!("Failed to generate embedding for updated fact");
+            return Err(MemoryError::Embedding("Failed to generate embedding for updated fact".to_string()));
         }
         let vector = &embeddings[0];
 
@@ -547,7 +547,7 @@ impl SemanticMemory {
 
 pub(crate) fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Result<World> {
     log::info!("Rebuilding local HNSW index from database embeddings...");
-    let mut world = World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance))?;
+    let mut world = World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance)).map_err(|e| MemoryError::Hnsw(e.to_string()))?;
 
     let mut stmt = conn.prepare("SELECT node_id, embedding FROM semantic_metadata WHERE valid_until IS NULL")?;
     let mut rows = stmt.query([])?;
@@ -564,10 +564,10 @@ pub(crate) fn rebuild_hnsw_index(conn: &Connection, _dimensions: usize) -> Resul
 
         let mapping_id = get_or_create_mapping_id(conn, &node_id)?;
         let vector = Vector::new_f32(&vector_values);
-        world.insert_vector(mapping_id, vector)?;
+        world.insert_vector(mapping_id, vector).map_err(|e| MemoryError::Hnsw(e.to_string()))?;
     }
 
-    let dumped = world.dump()?;
+    let dumped = world.dump().map_err(|e| MemoryError::Hnsw(e.to_string()))?;
     conn.execute(
         "INSERT OR REPLACE INTO semantic_hnsw_index (id, index_data) VALUES (1, ?1)",
         params![dumped],

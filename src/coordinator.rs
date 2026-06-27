@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use crate::layers::semantic::SemanticMemory;
 use crate::layers::shared::SharedMemory;
 use crate::layers::working::WorkingMemory;
 
-use anyhow::Context;
+
 use parking_lot::Mutex;
 
 pub struct MemoryCoordinator {
@@ -49,7 +49,7 @@ impl MemoryCoordinator {
     pub fn create_branch(&self, branch_id: &str) -> Result<()> {
         let mut active = self.active_branch.lock();
         if active.is_some() {
-            anyhow::bail!("A database branch is already active. Commit or rollback first.");
+            return Err(MemoryError::Conflict("A database branch is already active. Commit or rollback first.".to_string()));
         }
 
         let branch_path = format!("{}.branch_{}", self.base_db_path, branch_id);
@@ -74,7 +74,7 @@ impl MemoryCoordinator {
         let mut active = self.active_branch.lock();
         let branch_id = active
             .as_ref()
-            .context("No active branch to commit.")?
+            .ok_or_else(|| MemoryError::Conflict("No active branch to commit.".to_string()))?
             .clone();
         let branch_path = format!("{}.branch_{}", self.base_db_path, branch_id);
 
@@ -107,7 +107,7 @@ impl MemoryCoordinator {
         let mut active = self.active_branch.lock();
         let branch_id = active
             .as_ref()
-            .context("No active branch to rollback.")?
+            .ok_or_else(|| MemoryError::Conflict("No active branch to rollback.".to_string()))?
             .clone();
         let branch_path = format!("{}.branch_{}", self.base_db_path, branch_id);
 

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::Result;
 use petgraph::graph::UnGraph;
 use petgraph::algo::tarjan_scc;
 use crate::layers::graph::GraphMemory;

@@ -2039,6 +2039,19 @@ pub async fn run_grpc_server(
     Ok(())
 }
 
+impl From<crate::error::MemoryError> for McpError {
+    fn from(err: crate::error::MemoryError) -> Self {
+        use crate::error::MemoryError::*;
+        match err {
+            ValidationError(msg)
+            | SymbolNotFound(msg)
+            | EntityNotFound(msg)
+            | PathNotFound(msg) => McpError::invalid_params(msg, None),
+            other => McpError::internal_error(other.to_string(), None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

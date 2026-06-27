@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use schemars::JsonSchema;
@@ -184,7 +184,7 @@ impl GraphMemory {
                     added_observations: added,
                 });
             } else {
-                anyhow::bail!("Entity with name {} not found in scope", obs.entity_name);
+                return Err(MemoryError::EntityNotFound(format!("Entity with name {} not found in scope", obs.entity_name)));
             }
         }
         Ok(results)

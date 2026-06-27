@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::Result;
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};

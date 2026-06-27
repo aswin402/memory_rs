@@ -1,7 +1,7 @@
 use crate::layers::{GraphMemory, SemanticMemory, MemoryScope};
 use crate::layers::graph::Relation;
 use crate::search::dedup::SemanticDedup;
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use rusqlite::params;
 
 pub struct DecisionEngine;
@@ -162,6 +162,6 @@ impl DecisionEngine {
             });
         }
 
-        anyhow::bail!("Either text or relation must be provided to DecisionEngine")
+        return Err(MemoryError::ValidationError("Either text or relation must be provided to DecisionEngine".to_string()));
     }
 }

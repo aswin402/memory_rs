@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use petgraph::graph::DiGraph;
 use petgraph::visit::Bfs;
 use crate::layers::graph::GraphMemory;
@@ -93,11 +93,11 @@ pub fn shortest_path(graph: &GraphMemory, start: &str, target: &str, scope: &Mem
     let (pet_graph, node_map) = build_petgraph(graph, scope)?;
     let start_idx = match node_map.get(start) {
         Some(&idx) => idx,
-        None => anyhow::bail!("Start entity not found"),
+        None => return Err(MemoryError::EntityNotFound(format!("Start entity '{}' not found", start))),
     };
     let target_idx = match node_map.get(target) {
         Some(&idx) => idx,
-        None => anyhow::bail!("Target entity not found"),
+        None => return Err(MemoryError::EntityNotFound(format!("Target entity '{}' not found", target))),
     };
 
     let path_indices = petgraph::algo::astar(
@@ -117,7 +117,7 @@ pub fn shortest_path(graph: &GraphMemory, start: &str, target: &str, scope: &Mem
         }
         Ok(PathResult { path, relations })
     } else {
-        anyhow::bail!("No path found between {} and {}", start, target)
+        return Err(MemoryError::PathNotFound(format!("No path found between {} and {}", start, target)));
     }
 }
 

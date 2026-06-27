@@ -3,7 +3,7 @@ use crate::layers::MemoryScope;
 use crate::search::importance::ImportanceScorer;
 use crate::search::dedup::SemanticDedup;
 use crate::layers::semantic::calculate_cosine_similarity;
-use anyhow::Result;
+use crate::error::Result;
 use rusqlite::params;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

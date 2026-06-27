@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use schemars::JsonSchema;
 use crate::layers::{GraphMemory, SemanticMemory, MemoryScope};
 use crate::layers::semantic::{rebuild_hnsw_index, calculate_cosine_similarity};
-use anyhow::Result;
+use crate::error::Result;
 use rusqlite::params;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]

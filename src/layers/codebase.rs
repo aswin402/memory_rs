@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 use parking_lot::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
@@ -359,7 +359,7 @@ impl CodebaseMemory {
 
         let start_idx = match node_map.get(target_symbol) {
             Some(&idx) => idx,
-            None => anyhow::bail!("Symbol '{}' not found in indexed codebase", target_symbol),
+            None => return Err(MemoryError::SymbolNotFound(format!("Symbol '{}' not found in indexed codebase", target_symbol))),
         };
 
         // Manual BFS on reversed callgraph

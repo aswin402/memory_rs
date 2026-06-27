@@ -1,6 +1,6 @@
 use crate::layers::semantic::SemanticMemory;
 use crate::layers::MemoryScope;
-use anyhow::Result;
+use crate::error::Result;
 
 pub struct SemanticDedup;
 

@@ -2,7 +2,7 @@ use crate::layers::MemoryScope;
 use crate::layers::semantic::SemanticMemory;
 use crate::layers::graph::GraphMemory;
 use crate::layers::episodic::EpisodicMemory;
-use anyhow::Result;
+use crate::error::Result;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]

@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use std::time::Instant;
 use crate::layers::semantic::SemanticMemory;
 use crate::layers::MemoryScope;
-use anyhow::Result;
+use crate::error::{Result, MemoryError};
 
 #[derive(Debug, Clone)]
 pub struct WorkingEntry {
@@ -72,7 +72,7 @@ impl WorkingMemory {
     }
 
     pub fn evict_expired(&self, semantic: &SemanticMemory) -> Result<usize> {
-        let mut map = self.session_data.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+        let mut map = self.session_data.write().map_err(|_| MemoryError::LockPoisoned("WorkingMemory session_data".to_string()))?;
         let mut evicted_count = 0;
         let mut to_remove = Vec::new();
 
@@ -110,7 +110,7 @@ impl WorkingMemory {
     pub fn promote_to_semantic(&self, key: &str, semantic: &SemanticMemory, scope: &MemoryScope) -> Result<bool> {
         let scoped_key = get_scoped_key(key, scope);
         let entry_opt = {
-            let mut map = self.session_data.write().map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
+            let mut map = self.session_data.write().map_err(|_| MemoryError::LockPoisoned("WorkingMemory session_data".to_string()))?;
             map.remove(&scoped_key)
         };
 
