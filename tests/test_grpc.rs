@@ -282,6 +282,61 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert!(trav_resp.error_json.is_empty(), "Should not return error");
     println!("Traverse Graph Response: {}", trav_resp.result_json);
 
+    // 12. Test context intelligence tools via gRPC
+    println!("Testing context intelligence tools via gRPC...");
+
+    // Test extract_and_store_facts
+    let extract_params = serde_json::json!({
+        "name": "extract_and_store_facts",
+        "arguments": {
+            "text": "Alice prefers Rust."
+        }
+    });
+    let extract_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: extract_params.to_string(),
+        id: 11,
+        has_id: true,
+    };
+    let extract_resp = client.call(extract_req).await?.into_inner();
+    assert!(extract_resp.error_json.is_empty(), "Should not return error for extract_and_store_facts");
+    println!("Extract and Store Facts gRPC Response: {}", extract_resp.result_json);
+
+    // Test proactive_recall
+    let recall_params = serde_json::json!({
+        "name": "proactive_recall",
+        "arguments": {
+            "query": "Rust compiler"
+        }
+    });
+    let recall_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: recall_params.to_string(),
+        id: 12,
+        has_id: true,
+    };
+    let recall_resp = client.call(recall_req).await?.into_inner();
+    assert!(recall_resp.error_json.is_empty(), "Should not return error for proactive_recall");
+    println!("Proactive Recall gRPC Response: {}", recall_resp.result_json);
+
+    // Test compress_context
+    let compress_params = serde_json::json!({
+        "name": "compress_context",
+        "arguments": {
+            "text": "First compilation step. Second slow step. Third fluff.",
+            "ratio": 0.5
+        }
+    });
+    let compress_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: compress_params.to_string(),
+        id: 13,
+        has_id: true,
+    };
+    let compress_resp = client.call(compress_req).await?.into_inner();
+    assert!(compress_resp.error_json.is_empty(), "Should not return error for compress_context");
+    println!("Compress Context gRPC Response: {}", compress_resp.result_json);
+
     // Kill the server process
     child.kill()?;
 
@@ -291,3 +346,4 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
     println!("All gRPC integration tests passed successfully!");
     Ok(())
 }
+
