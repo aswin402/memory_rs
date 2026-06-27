@@ -12,4 +12,4 @@ Date: 2026-06-27
 ## Progress Log
 - Task 1: complete (commit a835245, implemented structured MemoryError enum using thiserror and refactored coordinator, layers, search modules, and MCP error mapping to use typed results)
 - Task 2: complete (commit c747b7d, extracted all table creation queries to a centralized migrations runner in src/db/migrations.rs and updated all layer constructors to run migrations)
-- Task 3: complete (implemented input validation for identifiers and text length, integrated checks across all 41 MCP tool handlers, and verified with unit tests)
+- Task 3: complete (commit 7a47a41, implemented validation helpers for identifier validation and text length validation, and injected checks into all 41 tool handlers, unit tests passing)
