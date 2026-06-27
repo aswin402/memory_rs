@@ -7,6 +7,7 @@ mod layers;
 mod mcp;
 mod search;
 mod consolidation;
+mod extraction;
 
 use coordinator::MemoryCoordinator;
 
