@@ -5,8 +5,9 @@ Plan: 2026-06-27-production-hardening.md
 Date: 2026-06-27
 
 ## Tasks Checklist
-- [ ] Task 1: Typed Error Handling
+- [x] Task 1: Typed Error Handling
 - [ ] Task 2: Centralized Database Migrations
 - [ ] Task 3: Security & Input Hardening
 
 ## Progress Log
+- Task 1: complete (commit a835245, implemented structured MemoryError enum using thiserror and refactored coordinator, layers, search modules, and MCP error mapping to use typed results)
