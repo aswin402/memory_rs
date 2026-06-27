@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-06-27
+
+### Added
+- **Multi-hop Graph Traversal**: Implemented depth-limited BFS traversal, A* shortest path, and relation chain following algorithms inside `src/layers/graph_traversal.rs`.
+- **Connected Component Community Detection**: Segmented graph memory into communities using Tarjan's SCC algorithm, generating textual summaries from member observations inside `src/search/community.rs`.
+- **Recursive Codebase Impact Analysis**: Created transitive downstream caller analysis tracing callee-to-caller dependencies using reversed call-graph BFS and calculating risk metrics.
+- **New MCP Tools**: Exposed `traverse_graph`, `find_path`, `analyze_graph_communities`, and `analyze_code_impact` tools for advanced graph intelligence.
+- **gRPC Integration Testing**: Extended Tonic gRPC integration test suite with verification coverage for the new graph traversal endpoint.
+
 ## [0.1.4] - 2026-06-26
+
 
 ### Added
 - **Bi-temporal Fact Model**: Introduced bi-temporal metadata columns (`valid_from`, `valid_until`, `superseded_by`, and `confidence`) in `graph_edges` and `semantic_metadata` tables.

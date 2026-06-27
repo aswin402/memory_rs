@@ -115,7 +115,7 @@ This isolates the communication channel, making it completely resilient to stand
 
 ## 🔌 Exposed MCP Tools
 
-`openmemory_rs` registers 19 comprehensive tools categorized by cognitive layers:
+`openmemory_rs` registers 36 comprehensive tools categorized by cognitive layers:
 
 ### 1. Knowledge Graph Tools
 * `create_entities`: Create nodes with entity types and observations.
@@ -142,3 +142,27 @@ This isolates the communication channel, making it completely resilient to stand
 ### 4. Shared Team Memory Tools
 * `store_shared_team_memory`: Store key-value data shared across target agent IDs.
 * `retrieve_shared_team_memory`: Retrieve target messages/contexts for specific agent IDs.
+
+### 5. Working Memory Tools
+* `set_working_memory` / `get_working_memory` / `delete_working_memory`: Read/write RAM-cached short-term memories.
+* `evict_expired_working_memory`: Clear short-term memory keys based on TTL.
+
+### 6. Database Branching Tools
+* `create_database_branch`: Create a sandboxed database branch.
+* `commit_database_branch` / `rollback_database_branch`: Merge or discard sandboxed changes.
+
+### 7. Compaction & Conflict Resolution Tools
+* `compact_memories`: Automatically compact similar memories and apply recency decay algorithms.
+* `detect_and_resolve_conflicts`: Detect and resolve contradicting facts within the graph or semantic layers.
+
+### 8. Temporal Query Tools
+* `invalidate_fact`: Apply soft invalidation to facts or relations.
+* `query_fact_history`: Retrieve the bi-temporal state history of a fact.
+* `query_as_of`: Query the active memory graph state as of a historical ISO 8601 timestamp.
+
+### 9. Graph Intelligence Tools
+* `traverse_graph`: Traverse nodes and edges from a start entity using BFS up to a maximum depth.
+* `find_path`: Find the shortest path and relations between two entity nodes.
+* `analyze_graph_communities`: Segment the graph into weakly connected components and summarize themes.
+* `analyze_code_impact`: Calculate downstream callers and change risk for a codebase symbol recursively.
+
