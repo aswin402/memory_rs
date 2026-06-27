@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-06-27
+
+### Added
+- **Benchmark Suite**: Added criterion micro-benchmarks targeting semantic insertions, semantic similarity queries, context compression, and graph traversal.
+- **Library Target**: Refactored the package to compile as both a library crate (`src/lib.rs`) and binary crate (`src/main.rs`) to expose cognitive layers to benchmark suites and external tools.
+
+### Changed
+- **Robust BFS Traversal**: Refactored graph BFS to use a custom `VecDeque` queue instead of petgraph's `Bfs` to ensure safety and prevent key-lookup panics under `max_depth` constraints.
+
+### Fixed
+- **Database Schema Constraints**: Fixed `graph_edges` re-creation in migrations to restore `valid_from` and `confidence` default constraints.
+- **Unit Test Table Migration Errors**: Fixed table migrations to automatically run on connection opening inside individual layers, ensuring all unit tests succeed.
+
 ## [0.1.6] - 2026-06-27
 
 ### Added

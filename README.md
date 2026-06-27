@@ -166,3 +166,19 @@ This isolates the communication channel, making it completely resilient to stand
 * `analyze_graph_communities`: Segment the graph into weakly connected components and summarize themes.
 * `analyze_code_impact`: Calculate downstream callers and change risk for a codebase symbol recursively.
 
+---
+
+## 🧪 Testing & Benchmarking
+
+### Running Tests
+To run the full unit and gRPC integration test suite:
+```bash
+cargo test
+```
+
+### Running Benchmarks
+To run the Criterion performance micro-benchmarks profiling semantic database insertions, hybrid search queries, context compression, and graph BFS traversals:
+```bash
+cargo bench
+```
+
