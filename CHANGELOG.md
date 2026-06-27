@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-06-27
+
+### Added
+- **Fact Extraction Engine**: Implemented algorithmic entity-relation triple parsing from raw texts using sentence tokenization, precompiled regex patterns (`uses`, `depends_on`, `prefers`, `is_a`, `works_with`, `created`), and common noun/stop-word filters.
+- **Proactive Recall Engine**: Implemented cross-layer context-based retrieval querying Semantic, Graph, and Episodic memory, normalizing scores, deduplicating elements, and applying cross-layer entity name reference boosting.
+- **Context Compressor**: Implemented local TF-IDF sentence scoring, Porter Stemmer word normalization, English stop-words filtering, and original document order reconstruction.
+- **New MCP Tools**: Exposed `extract_and_store_facts`, `proactive_recall`, and `compress_context` MCP tools.
+- **gRPC Integration Testing**: Extended Tonic gRPC integration test suite with step 12 verifying context intelligence tools.
+
 ## [0.1.5] - 2026-06-27
 
 ### Added
