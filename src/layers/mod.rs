@@ -4,6 +4,8 @@ pub mod graph;
 pub mod semantic;
 pub mod shared;
 pub mod working;
+pub mod graph_traversal;
+
 
 pub use graph::GraphMemory;
 pub use semantic::SemanticMemory;
