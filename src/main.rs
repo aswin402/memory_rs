@@ -1,17 +1,9 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-mod config;
-mod coordinator;
-pub mod db;
-pub mod error;
-mod layers;
-mod mcp;
-mod search;
-mod consolidation;
-mod extraction;
-
-use coordinator::MemoryCoordinator;
+use openmemory_rs::config;
+use openmemory_rs::coordinator::MemoryCoordinator;
+use openmemory_rs::mcp;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -1,6 +1,5 @@
 use crate::error::{Result, MemoryError};
 use petgraph::graph::DiGraph;
-use petgraph::visit::Bfs;
 use crate::layers::graph::GraphMemory;
 use crate::layers::MemoryScope;
 use rusqlite::params;
@@ -60,21 +59,23 @@ pub fn bfs_traverse(graph: &GraphMemory, start_entity: &str, max_depth: u32, sco
     };
 
     let mut steps = Vec::new();
-    let mut bfs = Bfs::new(&pet_graph, start_idx);
-    let mut depths = std::collections::HashMap::new();
-    depths.insert(start_idx, 0);
+    let mut queue = std::collections::VecDeque::new();
+    let mut visited = std::collections::HashSet::new();
 
-    while let Some(node) = bfs.next(&pet_graph) {
-        let depth = depths[&node];
+    queue.push_back((start_idx, 0));
+    visited.insert(start_idx);
+
+    while let Some((node, depth)) = queue.pop_front() {
         if depth >= max_depth {
             continue;
         }
 
         let mut neighbors = pet_graph.neighbors(node).detach();
         while let Some((edge, neighbor)) = neighbors.next(&pet_graph) {
-            if !depths.contains_key(&neighbor) {
+            if visited.insert(neighbor) {
                 let next_depth = depth + 1;
-                depths.insert(neighbor, next_depth);
+                queue.push_back((neighbor, next_depth));
+
                 let rel = pet_graph.edge_weight(edge).unwrap().clone();
                 let name = pet_graph.node_weight(neighbor).unwrap().clone();
                 steps.push(TraversalStep {
