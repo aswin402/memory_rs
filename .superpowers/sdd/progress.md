@@ -1,19 +1,12 @@
 # SDD Task Progress Ledger
 
 Project: openmemory_rs
-Plan: 2026-06-27-context-intelligence.md
+Plan: 2026-06-27-production-hardening.md
 Date: 2026-06-27
 
 ## Tasks Checklist
-- [x] Task 1: Fact Extraction Engine
-- [x] Task 2: Proactive Recall Engine
-- [x] Task 3: Context Compressor Engine
-- [x] Task 4: Expose MCP Tools
-- [x] Task 5: gRPC Integration Testing
+- [ ] Task 1: Typed Error Handling
+- [ ] Task 2: Centralized Database Migrations
+- [ ] Task 3: Security & Input Hardening
 
 ## Progress Log
-- Task 1: complete (commit 2c42ec8, implemented FactExtractor with regexes and sentence tokenizer, unit tests passing)
-- Task 2: complete (commit 950b6e3, implemented RecallEngine in src/extraction/recall.rs with hybrid keyword/semantic search, cross-layer merge, deduplication, scoring/boosting algorithms, and unit tests)
-- Task 3: complete (commit b67add5, implemented ContextCompressor with TF-IDF sentence scoring and Porter Stemmer, unit tests passing)
-- Task 4: complete (commit 0d5cc50, exposed extract_and_store_facts, proactive_recall, and compress_context MCP tools, unit tests passing)
-- Task 5: complete (commit 5e612b4, added Step 12 to test_grpc.rs to verify context intelligence tools over Tonic gRPC, integration tests passing)
