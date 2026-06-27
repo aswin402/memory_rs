@@ -401,6 +401,57 @@ pub struct CompressContextInput {
     pub ratio: Option<f32>,
 }
 
+pub fn validate_identifier(id: &Option<String>) -> crate::error::Result<()> {
+    if let Some(val) = id {
+        if val.len() > 128 {
+            return Err(crate::error::MemoryError::ValidationError(format!(
+                "Identifier exceeds 128 characters limit: {}",
+                val.len()
+            )));
+        }
+        if val != "*" {
+            for c in val.chars() {
+                if !c.is_alphanumeric() && c != '-' && c != '_' && c != '.' {
+                    return Err(crate::error::MemoryError::ValidationError(format!(
+                        "Identifier contains invalid characters: '{}'",
+                        val
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_str_identifier(val: &str) -> crate::error::Result<()> {
+    if val.len() > 128 {
+        return Err(crate::error::MemoryError::ValidationError(format!(
+            "Identifier exceeds 128 characters limit: {}",
+            val.len()
+        )));
+    }
+    if val != "*" {
+        for c in val.chars() {
+            if !c.is_alphanumeric() && c != '-' && c != '_' && c != '.' {
+                return Err(crate::error::MemoryError::ValidationError(format!(
+                    "Identifier contains invalid characters: '{}'",
+                    val
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_text_length(text: &str, max_len: usize) -> crate::error::Result<()> {
+    if text.chars().count() > max_len {
+        return Err(crate::error::MemoryError::ValidationError(format!(
+            "Text length exceeds maximum allowed characters: {}",
+            max_len
+        )));
+    }
+    Ok(())
+}
 
 fn get_scope(
     user_id: &Option<String>,
@@ -444,6 +495,16 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CreateEntitiesInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for entity in &input.entities {
+            validate_str_identifier(&entity.name)?;
+            validate_str_identifier(&entity.entity_type)?;
+            for obs in &entity.observations {
+                validate_text_length(obs, 65536)?;
+            }
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.create_entities(input.entities, &scope) {
             Ok(res) => {
@@ -461,6 +522,14 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CreateRelationsInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for rel in &input.relations {
+            validate_str_identifier(&rel.from)?;
+            validate_str_identifier(&rel.to)?;
+            validate_str_identifier(&rel.relation_type)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.create_relations(input.relations, &scope) {
             Ok(res) => {
@@ -476,6 +545,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<AddObservationsWrapper>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for obs in &input.observations {
+            validate_str_identifier(&obs.entity_name)?;
+            for content in &obs.contents {
+                validate_text_length(content, 65536)?;
+            }
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.add_observations(input.observations, &scope) {
             Ok(res) => {
@@ -493,6 +571,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteEntitiesInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for name in &input.entity_names {
+            validate_str_identifier(name)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.delete_entities(input.entity_names, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
@@ -507,6 +591,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteObservationsWrapper>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for del in &input.deletions {
+            validate_str_identifier(&del.entity_name)?;
+            for obs in &del.observations {
+                validate_text_length(obs, 65536)?;
+            }
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.delete_observations(input.deletions, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
@@ -521,6 +614,14 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DeleteRelationsInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for rel in &input.relations {
+            validate_str_identifier(&rel.from)?;
+            validate_str_identifier(&rel.to)?;
+            validate_str_identifier(&rel.relation_type)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.graph.delete_relations(input.relations, &scope) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
@@ -532,6 +633,9 @@ impl MemoryServer {
 
     #[tool(description = "Read the entire knowledge graph")]
     async fn read_graph(&self, Parameters(input): Parameters<EmptyInput>) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let res = self.coordinator.graph.read_graph(&scope);
         if let Ok(ref graph) = res {
@@ -554,6 +658,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchNodesInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.query, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let res = self.coordinator.graph.search_nodes(&input.query, &scope);
         if let Ok(ref graph) = res {
@@ -576,6 +684,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<OpenNodesInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        for name in &input.names {
+            validate_str_identifier(name)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let res = self.coordinator.graph.open_nodes(input.names, &scope);
         if let Ok(ref graph) = res {
@@ -601,6 +715,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<IndexCodebaseInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        if let Some(ref path) = input.path {
+            validate_text_length(path, 65536)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let scan_path = input.path.unwrap_or_else(|| ".".to_string());
         let path = Path::new(&scan_path);
@@ -623,6 +743,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryCodeGraphInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        if let Some(ref file_path) = input.file_path {
+            validate_text_length(file_path, 65536)?;
+        }
+        if let Some(ref query) = input.query {
+            validate_text_length(query, 65536)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let file_path = input.file_path.unwrap_or_default();
         let query = input.query.unwrap_or_default();
@@ -651,6 +780,19 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<LogEpisodeInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_identifier(&input.id)?;
+        validate_text_length(&input.task_description, 65536)?;
+        validate_text_length(&input.execution_status, 65536)?;
+        validate_text_length(&input.steps_taken, 65536)?;
+        if let Some(ref error_message) = input.error_message {
+            validate_text_length(error_message, 65536)?;
+        }
+        if let Some(ref reflection) = input.reflection {
+            validate_text_length(reflection, 65536)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let created_at = chrono::Utc::now().to_rfc3339();
@@ -680,6 +822,22 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<LogReflectionInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.task_description, 65536)?;
+        validate_text_length(&input.status, 65536)?;
+        validate_text_length(&input.steps_taken, 65536)?;
+        if let Some(ref error_encountered) = input.error_encountered {
+            validate_text_length(error_encountered, 65536)?;
+        }
+        if let Some(ref root_cause) = input.root_cause {
+            validate_text_length(root_cause, 65536)?;
+        }
+        if let Some(ref solution_applied) = input.solution_applied {
+            validate_text_length(solution_applied, 65536)?;
+        }
+        validate_text_length(&input.reflection, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
@@ -712,6 +870,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RetrieveReflectionsInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        if let Some(ref query) = input.query {
+            validate_text_length(query, 65536)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let query = input.query.unwrap_or_default();
         let res = self.coordinator.episodic.get_reflections(&query, &scope);
@@ -737,6 +901,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchTextInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.query, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let limit = input.limit.unwrap_or(10);
         let res = self.coordinator.semantic.search_text(&input.query, limit, &scope);
@@ -762,6 +930,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SearchTextInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.query, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let limit = input.limit.unwrap_or(10);
         let res = self.coordinator.semantic.query_similar_facts(&input.query, limit, &scope);
@@ -786,6 +958,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RecordToolPerfInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.tool_name)?;
+        validate_str_identifier(&input.model_name)?;
+        validate_str_identifier(&input.task_type)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let last_used = chrono::Utc::now().to_rfc3339();
         let rec = ToolPerformanceRecord {
@@ -813,6 +991,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryToolPerfInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.task_type)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let res = self.coordinator.episodic.query_tool_performance(&input.task_type, &scope);
         if let Ok(ref records) = res {
@@ -836,6 +1018,15 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<StoreSharedMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.key)?;
+        validate_text_length(&input.value, 65536)?;
+        validate_str_identifier(&input.source_agent)?;
+        for target in &input.target_agents {
+            validate_str_identifier(target)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let timestamp = chrono::Utc::now().to_rfc3339();
         let item = SharedMemoryItem {
@@ -862,6 +1053,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<RetrieveSharedMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.agent_id)?;
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id_scope)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id_scope);
         let agent_id = input.agent_id.unwrap_or_default();
         let res = self.coordinator.shared.retrieve_shared_memory(&agent_id, &scope);
@@ -885,6 +1080,9 @@ impl MemoryServer {
         &self,
         Parameters(_input): Parameters<EmptyInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&_input.user_id)?;
+        validate_identifier(&_input.session_id)?;
+        validate_identifier(&_input.agent_id)?;
         match self.coordinator.episodic.get_memory_stats() {
             Ok(res) => {
                 let text = serde_json::to_string_pretty(&res).unwrap_or_default();
@@ -902,6 +1100,12 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<LogRepoEvolutionInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_text_length(&input.file_path, 65536)?;
+        validate_str_identifier(&input.version)?;
+        validate_identifier(&input.commit_hash)?;
+        validate_identifier(&input.author)?;
+        validate_str_identifier(&input.change_type)?;
+        validate_text_length(&input.summary_of_changes, 65536)?;
         let timestamp = chrono::Utc::now().to_rfc3339();
         let evo = RepositoryEvolution {
             file_path: input.file_path,
@@ -928,6 +1132,9 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryRepoEvolutionInput>,
     ) -> Result<CallToolResult, McpError> {
+        if let Some(ref file_path) = input.file_path {
+            validate_text_length(file_path, 65536)?;
+        }
         let file_path = input.file_path.unwrap_or_default();
         match self.coordinator.codebase.query_evolution(&file_path) {
             Ok(res) => {
@@ -945,6 +1152,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<BranchIdInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_str_identifier(&input.branch_id)?;
         match self.coordinator.create_branch(&input.branch_id) {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(format!(
                 "Successfully created database branch: {}",
@@ -959,8 +1167,11 @@ impl MemoryServer {
     )]
     async fn commit_database_branch(
         &self,
-        _input: Parameters<EmptyInput>,
+        Parameters(input): Parameters<EmptyInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         match self.coordinator.commit_branch() {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Successfully committed database branch",
@@ -974,8 +1185,11 @@ impl MemoryServer {
     )]
     async fn rollback_database_branch(
         &self,
-        _input: Parameters<EmptyInput>,
+        Parameters(input): Parameters<EmptyInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         match self.coordinator.rollback_branch() {
             Ok(_) => Ok(CallToolResult::success(vec![Content::text(
                 "Successfully rolled back database branch",
@@ -991,6 +1205,13 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<InvalidateFactInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_identifier(&input.fact_id)?;
+        validate_identifier(&input.from)?;
+        validate_identifier(&input.to)?;
+        validate_identifier(&input.relation_type)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
         let mut messages = Vec::new();
@@ -1043,6 +1264,11 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryFactHistoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.entity_name)?;
+        validate_identifier(&input.relation_type)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1066,6 +1292,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<QueryAsOfInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.as_of, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1117,6 +1347,9 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<DetectAndResolveConflictsInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let dry_run = input.dry_run.unwrap_or(true);
         let strategy = input.strategy.unwrap_or_else(|| "recency".to_string());
@@ -1155,6 +1388,9 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CompactMemoriesInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let strategy = input.strategy.unwrap_or_else(|| "both".to_string());
         let dry_run = input.dry_run.unwrap_or(false);
@@ -1186,6 +1422,11 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SetWorkingMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.key)?;
+        validate_text_length(&input.value, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1206,6 +1447,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<GetWorkingMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.key)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1236,6 +1481,9 @@ impl MemoryServer {
         &self,
         Parameters(_input): Parameters<EvictExpiredWorkingMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&_input.user_id)?;
+        validate_identifier(&_input.session_id)?;
+        validate_identifier(&_input.agent_id)?;
         match self.coordinator.working.evict_expired(&self.coordinator.semantic) {
             Ok(count) => {
                 Ok(CallToolResult::success(vec![Content::text(format!(
@@ -1254,6 +1502,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<PromoteWorkingMemoryInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.key)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1282,6 +1534,17 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<SmartStoreInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        if let Some(ref text) = input.text {
+            validate_text_length(text, 65536)?;
+        }
+        if let Some(ref rel) = input.relation {
+            validate_str_identifier(&rel.from)?;
+            validate_str_identifier(&rel.to)?;
+            validate_str_identifier(&rel.relation_type)?;
+        }
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
 
@@ -1307,6 +1570,10 @@ impl MemoryServer {
 
     #[tool(description = "Traverse nodes and edges from a start entity using BFS up to a maximum depth")]
     async fn traverse_graph(&self, Parameters(input): Parameters<TraverseGraphInput>) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.start_entity)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let depth = input.max_depth.unwrap_or(2);
         match crate::layers::graph_traversal::bfs_traverse(&self.coordinator.graph, &input.start_entity, depth, &scope) {
@@ -1317,6 +1584,11 @@ impl MemoryServer {
 
     #[tool(description = "Find the shortest path and relations between two entity nodes")]
     async fn find_path(&self, Parameters(input): Parameters<FindPathInput>) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_str_identifier(&input.start_entity)?;
+        validate_str_identifier(&input.target_entity)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match crate::layers::graph_traversal::shortest_path(&self.coordinator.graph, &input.start_entity, &input.target_entity, &scope) {
             Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
@@ -1326,6 +1598,9 @@ impl MemoryServer {
 
     #[tool(description = "Cluster the entity-relation graph into weakly connected communities with summaries")]
     async fn analyze_graph_communities(&self, Parameters(input): Parameters<AnalyzeGraphCommunitiesInput>) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match crate::search::community::detect_communities(&self.coordinator.graph, &scope) {
             Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
@@ -1335,6 +1610,10 @@ impl MemoryServer {
 
     #[tool(description = "Calculate downstream callers and change risk for a code symbol")]
     async fn analyze_code_impact(&self, Parameters(input): Parameters<AnalyzeCodeImpactInput>) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.target_symbol, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         match self.coordinator.codebase.impact_analysis(&input.target_symbol, &scope) {
             Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
@@ -1349,6 +1628,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<ExtractAndStoreFactsInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.text, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         
         let extractor = FactExtractor::new();
@@ -1441,6 +1724,10 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<ProactiveRecallInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_identifier(&input.user_id)?;
+        validate_identifier(&input.session_id)?;
+        validate_identifier(&input.agent_id)?;
+        validate_text_length(&input.query, 65536)?;
         let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
         let max_res = input.max_results.unwrap_or(10);
         
@@ -1494,6 +1781,7 @@ impl MemoryServer {
         &self,
         Parameters(input): Parameters<CompressContextInput>,
     ) -> Result<CallToolResult, McpError> {
+        validate_text_length(&input.text, 65536)?;
         let compressor = ContextCompressor::new();
         let ratio = input.ratio.unwrap_or(0.5);
         let compressed = compressor.compress_by_ratio(&input.text, ratio);
@@ -2777,6 +3065,76 @@ class MyTSClass {
         let compress_text = compress_val["content"][0]["text"].as_str().unwrap();
         assert!(compress_text.contains("originalLength"));
         assert!(compress_text.contains("compressedText"));
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_identifier_logic() {
+        // Valid identifiers
+        assert!(validate_identifier(&None).is_ok());
+        assert!(validate_identifier(&Some("valid-id_123.abc".to_string())).is_ok());
+        assert!(validate_identifier(&Some("*".to_string())).is_ok());
+
+        // Invalid: exceeds 128 characters
+        let long_id = "a".repeat(129);
+        assert!(validate_identifier(&Some(long_id)).is_err());
+
+        // Invalid: contains invalid characters
+        assert!(validate_identifier(&Some("invalid id".to_string())).is_err());
+        assert!(validate_identifier(&Some("invalid/id".to_string())).is_err());
+        assert!(validate_identifier(&Some("invalid*id".to_string())).is_err());
+
+        // Valid str identifiers
+        assert!(validate_str_identifier("valid-id").is_ok());
+        // Invalid str identifiers
+        assert!(validate_str_identifier("invalid/id").is_err());
+    }
+
+    #[test]
+    fn test_validate_text_length_logic() {
+        assert!(validate_text_length("hello", 10).is_ok());
+        assert!(validate_text_length("hello", 5).is_ok());
+        assert!(validate_text_length("hello", 4).is_err());
+
+        // Test with multi-byte characters
+        assert!(validate_text_length("🦀🦀🦀", 3).is_ok());
+        assert!(validate_text_length("🦀🦀🦀", 2).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_parameter_validation() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_validation_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+
+        // 1. Test invalid user_id pattern in read_graph
+        let input_invalid_uid = EmptyInput {
+            dummy: None,
+            user_id: Some("invalid/uid".to_string()),
+            session_id: None,
+            agent_id: None,
+        };
+        let res = server.read_graph(Parameters(input_invalid_uid)).await;
+        assert!(res.is_err(), "Should reject invalid user_id");
+        let err = res.unwrap_err();
+        let err_str = format!("{:?}", err);
+        assert!(err_str.contains("invalid characters") || err_str.contains("-32602") || err_str.contains("invalid_params"), "Got error: {}", err_str);
+
+        // 2. Test overly long text in extract_and_store_facts
+        let overly_long_text = "a".repeat(65537);
+        let input_long_text = ExtractAndStoreFactsInput {
+            text: overly_long_text,
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_long = server.extract_and_store_facts(Parameters(input_long_text)).await;
+        assert!(res_long.is_err(), "Should reject overly long text");
+        let err_long = res_long.unwrap_err();
+        let err_long_str = format!("{:?}", err_long);
+        assert!(err_long_str.contains("exceeds maximum") || err_long_str.contains("-32602") || err_long_str.contains("invalid_params"), "Got error: {}", err_long_str);
 
         let _ = std::fs::remove_file(db_path);
         Ok(())
