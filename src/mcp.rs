@@ -12,6 +12,7 @@ use crate::layers::codebase::{CodeElement, RepositoryEvolution};
 use crate::layers::episodic::{EpisodeLog, ReflectionItem, ToolPerformanceRecord};
 use crate::layers::graph::{AddObservationsInput, DeleteObservationsInput, Entity, Relation};
 use crate::layers::shared::SharedMemoryItem;
+use crate::extraction::{FactExtractor, RecallEngine, ContextCompressor};
 use tree_sitter::{Node, Parser};
 
 // ==================== WRAPPER STRUCTS FOR INPUTS ====================
@@ -373,6 +374,33 @@ pub struct AnalyzeCodeImpactInput {
     pub session_id: Option<String>,
     pub agent_id: Option<String>,
 }
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractAndStoreFactsInput {
+    pub text: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProactiveRecallInput {
+    pub query: String,
+    pub max_results: Option<usize>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressContextInput {
+    pub text: String,
+    pub ratio: Option<f32>,
+}
+
 
 fn get_scope(
     user_id: &Option<String>,
@@ -1312,6 +1340,173 @@ impl MemoryServer {
             Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
+    }
+
+    #[tool(
+        description = "Extract facts from text using FactExtractor and store them in the graph memory if they do not exist"
+    )]
+    async fn extract_and_store_facts(
+        &self,
+        Parameters(input): Parameters<ExtractAndStoreFactsInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        
+        let extractor = FactExtractor::new();
+        let extracted = extractor.extract(&input.text);
+        
+        let graph_kg = match self.coordinator.graph.read_graph(&scope) {
+            Ok(kg) => kg,
+            Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+        };
+        
+        let mut entities_to_create = Vec::new();
+        let mut relations_to_create = Vec::new();
+        
+        let mut existing_entity_names: std::collections::HashSet<String> = graph_kg
+            .entities
+            .iter()
+            .map(|e| e.name.to_lowercase())
+            .collect();
+            
+        for fact in &extracted {
+            let from_lower = fact.from.to_lowercase();
+            let to_lower = fact.to.to_lowercase();
+            let rel_lower = fact.relation.to_lowercase();
+            
+            let relation_exists = graph_kg.relations.iter().any(|r| {
+                r.from.to_lowercase() == from_lower
+                    && r.to.to_lowercase() == to_lower
+                    && r.relation_type.to_lowercase() == rel_lower
+            });
+            
+            if !relation_exists {
+                if !existing_entity_names.contains(&from_lower) {
+                    entities_to_create.push(Entity {
+                        name: fact.from.clone(),
+                        entity_type: "Concept".to_string(),
+                        observations: vec![],
+                    });
+                    existing_entity_names.insert(from_lower);
+                }
+                if !existing_entity_names.contains(&to_lower) {
+                    entities_to_create.push(Entity {
+                        name: fact.to.clone(),
+                        entity_type: "Concept".to_string(),
+                        observations: vec![],
+                    });
+                    existing_entity_names.insert(to_lower);
+                }
+                relations_to_create.push(Relation {
+                    from: fact.from.clone(),
+                    to: fact.to.clone(),
+                    relation_type: fact.relation.clone(),
+                });
+            }
+        }
+        
+        let created_entities = if !entities_to_create.is_empty() {
+            match self.coordinator.graph.create_entities(entities_to_create, &scope) {
+                Ok(entities) => entities,
+                Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+            }
+        } else {
+            Vec::new()
+        };
+        
+        let created_relations = if !relations_to_create.is_empty() {
+            match self.coordinator.graph.create_relations(relations_to_create, &scope) {
+                Ok(relations) => relations,
+                Err(e) => return Err(McpError::internal_error(e.to_string(), None)),
+            }
+        } else {
+            Vec::new()
+        };
+        
+        let result = serde_json::json!({
+            "extractedFactsCount": extracted.len(),
+            "createdEntitiesCount": created_entities.len(),
+            "createdRelationsCount": created_relations.len(),
+            "createdEntities": created_entities,
+            "createdRelations": created_relations,
+        });
+        
+        let text = serde_json::to_string_pretty(&result).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
+    #[tool(
+        description = "Recall contextually relevant memories across semantic, graph, and episodic layers given a query context"
+    )]
+    async fn proactive_recall(
+        &self,
+        Parameters(input): Parameters<ProactiveRecallInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let max_res = input.max_results.unwrap_or(10);
+        
+        let res = RecallEngine::recall(
+            &self.coordinator.semantic,
+            &self.coordinator.graph,
+            &self.coordinator.episodic,
+            &input.query,
+            max_res,
+            &scope,
+        );
+        
+        if let Ok(ref items) = res {
+            let accessed_by = get_accessed_by(&input.user_id, &input.agent_id);
+            for item in items {
+                if item.layer.contains("semantic") {
+                    if let Some(ref meta) = item.metadata {
+                        if let Some(node_id) = meta.get("nodeId").and_then(|n| n.as_str()) {
+                            let _ = self.coordinator.episodic.log_access(node_id, "semantic", &accessed_by);
+                        }
+                    }
+                } else if item.layer.contains("graph") {
+                    if let Some(ref meta) = item.metadata {
+                        if let Some(name) = meta.get("name").and_then(|n| n.as_str()) {
+                            let _ = self.coordinator.episodic.log_access(name, "graph", &accessed_by);
+                        }
+                    }
+                } else if item.layer.contains("episodic") {
+                    if let Some(ref meta) = item.metadata {
+                        if let Some(id) = meta.get("id").and_then(|i| i.as_str()) {
+                            let _ = self.coordinator.episodic.log_access(id, "episodic", &accessed_by);
+                        }
+                    }
+                }
+            }
+        }
+        
+        match res {
+            Ok(items) => {
+                let text = serde_json::to_string_pretty(&items).unwrap_or_default();
+                Ok(CallToolResult::success(vec![Content::text(text)]))
+            }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(
+        description = "Compress text context by scoring sentences using TF-IDF and keeping a specified ratio"
+    )]
+    async fn compress_context(
+        &self,
+        Parameters(input): Parameters<CompressContextInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let compressor = ContextCompressor::new();
+        let ratio = input.ratio.unwrap_or(0.5);
+        let compressed = compressor.compress_by_ratio(&input.text, ratio);
+        
+        let result = serde_json::json!({
+            "originalLength": input.text.len(),
+            "compressedLength": compressed.len(),
+            "ratio": ratio,
+            "compressedText": compressed,
+        });
+        
+        let text = serde_json::to_string_pretty(&result).unwrap_or_default();
+        Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 }
 
@@ -2489,6 +2684,86 @@ class MyTSClass {
         let text_impact = val_impact["content"][0]["text"].as_str().unwrap();
         assert!(text_impact.contains("fn_b"));
         assert!(text_impact.contains("riskScore"));
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_context_intelligence_tools() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_context_intel_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+        let scope = MemoryScope::default();
+
+        // 1. Test extract_and_store_facts
+        let text = "Alice prefers Neovim. Bob is using Python.";
+        let extract_input = ExtractAndStoreFactsInput {
+            text: text.to_string(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let extract_res = server.extract_and_store_facts(Parameters(extract_input)).await?;
+        let extract_val = serde_json::to_value(&extract_res)?;
+        let extract_text = extract_val["content"][0]["text"].as_str().unwrap();
+        assert!(extract_text.contains("\"extractedFactsCount\": 2"));
+        assert!(extract_text.contains("\"createdEntitiesCount\": 4"));
+        assert!(extract_text.contains("\"createdRelationsCount\": 2"));
+
+        // Verify entities and relations exist in graph
+        let graph_kg = coordinator.graph.read_graph(&scope)?;
+        let has_alice = graph_kg.entities.iter().any(|e| e.name == "Alice");
+        let has_neovim = graph_kg.entities.iter().any(|e| e.name == "Neovim");
+        assert!(has_alice && has_neovim);
+        let has_prefers = graph_kg.relations.iter().any(|r| r.relation_type == "prefers" && r.from == "Alice" && r.to == "Neovim");
+        assert!(has_prefers);
+
+        // 2. Test proactive_recall
+        // Seed semantic fact
+        coordinator.semantic.add_fact("fact-intel-1", "Rust is a fast systems programming language.", 0.9, &scope)?;
+        
+        // Seed episodic reflection
+        coordinator.episodic.log_reflection(
+            ReflectionItem {
+                id: "ref-intel-1".to_string(),
+                task_description: "Refactor Rust code".to_string(),
+                status: "Success".to_string(),
+                attempt_number: 1,
+                steps_taken: "Used cargo clippy".to_string(),
+                error_encountered: None,
+                root_cause: None,
+                solution_applied: None,
+                reflection: "Rust code should always run clippy first.".to_string(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            &scope,
+        )?;
+
+        let recall_input = ProactiveRecallInput {
+            query: "Rust programming compiler".to_string(),
+            max_results: Some(5),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let recall_res = server.proactive_recall(Parameters(recall_input)).await?;
+        let recall_val = serde_json::to_value(&recall_res)?;
+        let recall_text = recall_val["content"][0]["text"].as_str().unwrap();
+        // Should contain elements we seeded or extracted
+        assert!(recall_text.contains("Rust") || recall_text.contains("Python"));
+
+        // 3. Test compress_context
+        let long_text = "First sentence about Rust compilation. Second sentence about Rust compiler speed. Third fluffy sentence. Fourth random sentence here.";
+        let compress_input = CompressContextInput {
+            text: long_text.to_string(),
+            ratio: Some(0.5),
+        };
+        let compress_res = server.compress_context(Parameters(compress_input)).await?;
+        let compress_val = serde_json::to_value(&compress_res)?;
+        let compress_text = compress_val["content"][0]["text"].as_str().unwrap();
+        assert!(compress_text.contains("originalLength"));
+        assert!(compress_text.contains("compressedText"));
 
         let _ = std::fs::remove_file(db_path);
         Ok(())
