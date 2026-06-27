@@ -263,6 +263,25 @@ async fn test_grpc_mcp_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert!(compact_resp.error_json.is_empty(), "Should not return error");
     println!("Compaction Tool Response: {}", compact_resp.result_json);
 
+    // 11. Test traverse_graph via gRPC
+    println!("Calling traverse_graph via gRPC...");
+    let trav_params = serde_json::json!({
+        "name": "traverse_graph",
+        "arguments": {
+            "startEntity": "A",
+            "maxDepth": 1
+        }
+    });
+    let trav_req = McpRequest {
+        method: "tools/call".to_string(),
+        params_json: trav_params.to_string(),
+        id: 10,
+        has_id: true,
+    };
+    let trav_resp = client.call(trav_req).await?.into_inner();
+    assert!(trav_resp.error_json.is_empty(), "Should not return error");
+    println!("Traverse Graph Response: {}", trav_resp.result_json);
+
     // Kill the server process
     child.kill()?;
 
