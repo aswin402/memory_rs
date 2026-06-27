@@ -337,6 +337,43 @@ pub struct CompactMemoriesInput {
     pub agent_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TraverseGraphInput {
+    pub start_entity: String,
+    pub max_depth: Option<u32>,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FindPathInput {
+    pub start_entity: String,
+    pub target_entity: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeGraphCommunitiesInput {
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, schemars::JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeCodeImpactInput {
+    pub target_symbol: String,
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub agent_id: Option<String>,
+}
+
 fn get_scope(
     user_id: &Option<String>,
     session_id: &Option<String>,
@@ -1236,6 +1273,43 @@ impl MemoryServer {
                 let text = serde_json::to_string_pretty(&report).unwrap_or_default();
                 Ok(CallToolResult::success(vec![Content::text(text)]))
             }
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(description = "Traverse nodes and edges from a start entity using BFS up to a maximum depth")]
+    async fn traverse_graph(&self, Parameters(input): Parameters<TraverseGraphInput>) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        let depth = input.max_depth.unwrap_or(2);
+        match crate::layers::graph_traversal::bfs_traverse(&self.coordinator.graph, &input.start_entity, depth, &scope) {
+            Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(description = "Find the shortest path and relations between two entity nodes")]
+    async fn find_path(&self, Parameters(input): Parameters<FindPathInput>) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match crate::layers::graph_traversal::shortest_path(&self.coordinator.graph, &input.start_entity, &input.target_entity, &scope) {
+            Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(description = "Cluster the entity-relation graph into weakly connected communities with summaries")]
+    async fn analyze_graph_communities(&self, Parameters(input): Parameters<AnalyzeGraphCommunitiesInput>) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match crate::search::community::detect_communities(&self.coordinator.graph, &scope) {
+            Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
+            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+        }
+    }
+
+    #[tool(description = "Calculate downstream callers and change risk for a code symbol")]
+    async fn analyze_code_impact(&self, Parameters(input): Parameters<AnalyzeCodeImpactInput>) -> Result<CallToolResult, McpError> {
+        let scope = get_scope(&input.user_id, &input.session_id, &input.agent_id);
+        match self.coordinator.codebase.impact_analysis(&input.target_symbol, &scope) {
+            Ok(res) => Ok(CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&res).unwrap_or_default())])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
         }
     }
@@ -2313,6 +2387,108 @@ class MyTSClass {
 
         assert!(text.contains("removedCount"), "Response should contain compaction report metrics");
         assert!(text.contains("mergedCount"), "Response should contain compaction report metrics");
+
+        let _ = std::fs::remove_file(db_path);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mcp_graph_intelligence_tools() -> Result<()> {
+        let db_path = std::env::temp_dir().join(format!("test_mcp_gi_{}.db", uuid::Uuid::new_v4()));
+        let coordinator = Arc::new(MemoryCoordinator::new(db_path.to_str().unwrap(), 300)?);
+        let server = MemoryServer::new(coordinator.clone());
+        
+        // Setup simple graph
+        let scope = MemoryScope::default();
+        coordinator.graph.create_entities(vec![
+            Entity { name: "X".to_string(), entity_type: "Label".to_string(), observations: vec![] },
+            Entity { name: "Y".to_string(), entity_type: "Label".to_string(), observations: vec![] }
+        ], &scope)?;
+        coordinator.graph.create_relations(vec![
+            Relation { from: "X".to_string(), to: "Y".to_string(), relation_type: "points_to".to_string() }
+        ], &scope)?;
+
+        // 1. Test traverse_graph
+        let input_trav = TraverseGraphInput {
+            start_entity: "X".to_string(),
+            max_depth: Some(1),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_trav = server.traverse_graph(Parameters(input_trav)).await?;
+        assert!(!res_trav.content.is_empty());
+        let val_trav = serde_json::to_value(&res_trav)?;
+        let text_trav = val_trav["content"][0]["text"].as_str().unwrap();
+        assert!(text_trav.contains("Y"));
+
+        // 2. Test find_path
+        let input_path = FindPathInput {
+            start_entity: "X".to_string(),
+            target_entity: "Y".to_string(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_path = server.find_path(Parameters(input_path)).await?;
+        assert!(!res_path.content.is_empty());
+        let val_path = serde_json::to_value(&res_path)?;
+        let text_path = val_path["content"][0]["text"].as_str().unwrap();
+        assert!(text_path.contains("points_to"));
+
+        // 3. Test analyze_graph_communities
+        let input_comm = AnalyzeGraphCommunitiesInput {
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_comm = server.analyze_graph_communities(Parameters(input_comm)).await?;
+        assert!(!res_comm.content.is_empty());
+        let val_comm = serde_json::to_value(&res_comm)?;
+        let text_comm = val_comm["content"][0]["text"].as_str().unwrap();
+        assert!(text_comm.contains("X") || text_comm.contains("Y"));
+
+        // 4. Test analyze_code_impact
+        coordinator.codebase.index_element(crate::layers::codebase::CodeElement {
+            id: "fn_a".to_string(),
+            file_path: "src/a.rs".to_string(),
+            element_type: "Function".to_string(),
+            name: "a".to_string(),
+            signature: "fn a()".to_string(),
+            ast_json: None,
+            parent_id: None,
+            start_line: 1,
+            end_line: 10,
+        }, &scope)?;
+        coordinator.codebase.index_element(crate::layers::codebase::CodeElement {
+            id: "fn_b".to_string(),
+            file_path: "src/b.rs".to_string(),
+            element_type: "Function".to_string(),
+            name: "b".to_string(),
+            signature: "fn b()".to_string(),
+            ast_json: None,
+            parent_id: None,
+            start_line: 1,
+            end_line: 10,
+        }, &scope)?;
+        coordinator.codebase.index_call(crate::layers::codebase::CodeCall {
+            caller_id: "fn_b".to_string(),
+            callee_id: "fn_a".to_string(),
+            call_site: None,
+        })?;
+
+        let input_impact = AnalyzeCodeImpactInput {
+            target_symbol: "fn_a".to_string(),
+            user_id: None,
+            session_id: None,
+            agent_id: None,
+        };
+        let res_impact = server.analyze_code_impact(Parameters(input_impact)).await?;
+        assert!(!res_impact.content.is_empty());
+        let val_impact = serde_json::to_value(&res_impact)?;
+        let text_impact = val_impact["content"][0]["text"].as_str().unwrap();
+        assert!(text_impact.contains("fn_b"));
+        assert!(text_impact.contains("riskScore"));
 
         let _ = std::fs::remove_file(db_path);
         Ok(())
