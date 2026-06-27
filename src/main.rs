@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 mod config;
 mod coordinator;
+pub mod db;
 pub mod error;
 mod layers;
 mod mcp;

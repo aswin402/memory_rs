@@ -27,6 +27,12 @@ impl MemoryCoordinator {
     pub fn new(db_path: &str, default_ttl: u64) -> Result<Self> {
         let path = Path::new(db_path);
 
+        // Run centralized database migrations
+        {
+            let conn = rusqlite::Connection::open(path)?;
+            crate::db::run_migrations(&conn)?;
+        }
+
         let working = Arc::new(WorkingMemory::new(default_ttl));
         let episodic = Arc::new(EpisodicMemory::new(path)?);
         let semantic = Arc::new(SemanticMemory::new(path)?);

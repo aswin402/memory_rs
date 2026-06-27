@@ -28,56 +28,9 @@ impl SemanticMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS semantic_metadata (
-                node_id TEXT,
-                raw_text TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                timestamp TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 1.0,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-                valid_until TEXT,
-                superseded_by TEXT,
-                PRIMARY KEY (node_id, valid_from)
-            );
-            CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS semantic_vector_mapping (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node_id TEXT UNIQUE NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                index_data BLOB NOT NULL
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(
-                node_id UNINDEXED,
-                raw_text
-            );
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ai AFTER INSERT ON semantic_metadata BEGIN
-                INSERT INTO semantic_fts(node_id, raw_text) VALUES (new.node_id, new.raw_text);
-            END;
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ad AFTER DELETE ON semantic_metadata BEGIN
-                DELETE FROM semantic_fts WHERE node_id = old.node_id;
-            END;
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_au AFTER UPDATE OF raw_text ON semantic_metadata BEGIN
-                UPDATE semantic_fts SET raw_text = new.raw_text WHERE node_id = new.node_id;
-            END;
-            INSERT INTO semantic_fts(node_id, raw_text)
-            SELECT node_id, raw_text FROM semantic_metadata
-            WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN valid_until TEXT", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN superseded_by TEXT", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id)", []);
+        crate::db::run_migrations(&conn)?;
 
         // Initialize local ONNX fastembed model
         let model = TextEmbedding::try_new(
@@ -367,56 +320,8 @@ impl SemanticMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS semantic_metadata (
-                node_id TEXT,
-                raw_text TEXT NOT NULL,
-                embedding BLOB NOT NULL,
-                timestamp TEXT NOT NULL,
-                importance REAL NOT NULL DEFAULT 1.0,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-                valid_until TEXT,
-                superseded_by TEXT,
-                PRIMARY KEY (node_id, valid_from)
-            );
-            CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS semantic_vector_mapping (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node_id TEXT UNIQUE NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS semantic_hnsw_index (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                index_data BLOB NOT NULL
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS semantic_fts USING fts5(
-                node_id UNINDEXED,
-                raw_text
-            );
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ai AFTER INSERT ON semantic_metadata BEGIN
-                INSERT INTO semantic_fts(node_id, raw_text) VALUES (new.node_id, new.raw_text);
-            END;
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_ad AFTER DELETE ON semantic_metadata BEGIN
-                DELETE FROM semantic_fts WHERE node_id = old.node_id;
-            END;
-            CREATE TRIGGER IF NOT EXISTS semantic_metadata_au AFTER UPDATE OF raw_text ON semantic_metadata BEGIN
-                UPDATE semantic_fts SET raw_text = new.raw_text WHERE node_id = new.node_id;
-            END;
-            INSERT INTO semantic_fts(node_id, raw_text)
-            SELECT node_id, raw_text FROM semantic_metadata
-            WHERE NOT EXISTS (SELECT 1 FROM semantic_fts WHERE semantic_fts.node_id = semantic_metadata.node_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN valid_until TEXT", []);
-        let _ = conn.execute("ALTER TABLE semantic_metadata ADD COLUMN superseded_by TEXT", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_semantic_metadata_scope ON semantic_metadata (user_id, session_id, agent_id)", []);
 
         let dimensions = 384;
         let hnsw_index = {

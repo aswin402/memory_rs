@@ -63,78 +63,9 @@ impl EpisodicMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS episodic_logs (
-                id TEXT PRIMARY KEY,
-                task_description TEXT NOT NULL,
-                execution_status TEXT NOT NULL,
-                steps_taken TEXT NOT NULL,
-                error_message TEXT,
-                reflection TEXT,
-                created_at TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_episodic_logs_scope ON episodic_logs (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS reflection_memory (
-                id TEXT PRIMARY KEY,
-                task_description TEXT NOT NULL,
-                status TEXT NOT NULL,
-                attempt_number INTEGER NOT NULL,
-                steps_taken TEXT NOT NULL,
-                error_encountered TEXT,
-                root_cause TEXT,
-                solution_applied TEXT,
-                reflection TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_reflection_memory_scope ON reflection_memory (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS tool_performance (
-                tool_name TEXT NOT NULL,
-                model_name TEXT NOT NULL,
-                task_type TEXT NOT NULL,
-                success_count INTEGER NOT NULL DEFAULT 0,
-                failure_count INTEGER NOT NULL DEFAULT 0,
-                average_latency REAL NOT NULL DEFAULT 0.0,
-                last_used TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (tool_name, model_name, task_type, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_tool_performance_scope ON tool_performance (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS memory_access_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                memory_id TEXT NOT NULL,
-                layer TEXT NOT NULL,
-                accessed_at TEXT NOT NULL,
-                accessed_by TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_memory_access_log_mem_id ON memory_access_log (memory_id);
-            CREATE INDEX IF NOT EXISTS idx_memory_access_log_layer ON memory_access_log (layer);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_episodic_logs_scope ON episodic_logs (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_reflection_memory_scope ON reflection_memory (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_performance_scope ON tool_performance (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE memory_access_log ADD COLUMN accessed_by TEXT NOT NULL DEFAULT 'unknown'", []);
+        crate::db::run_migrations(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -344,78 +275,8 @@ impl EpisodicMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS episodic_logs (
-                id TEXT PRIMARY KEY,
-                task_description TEXT NOT NULL,
-                execution_status TEXT NOT NULL,
-                steps_taken TEXT NOT NULL,
-                error_message TEXT,
-                reflection TEXT,
-                created_at TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_episodic_logs_scope ON episodic_logs (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS reflection_memory (
-                id TEXT PRIMARY KEY,
-                task_description TEXT NOT NULL,
-                status TEXT NOT NULL,
-                attempt_number INTEGER NOT NULL,
-                steps_taken TEXT NOT NULL,
-                error_encountered TEXT,
-                root_cause TEXT,
-                solution_applied TEXT,
-                reflection TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_reflection_memory_scope ON reflection_memory (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS tool_performance (
-                tool_name TEXT NOT NULL,
-                model_name TEXT NOT NULL,
-                task_type TEXT NOT NULL,
-                success_count INTEGER NOT NULL DEFAULT 0,
-                failure_count INTEGER NOT NULL DEFAULT 0,
-                average_latency REAL NOT NULL DEFAULT 0.0,
-                last_used TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (tool_name, model_name, task_type, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_tool_performance_scope ON tool_performance (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS memory_access_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                memory_id TEXT NOT NULL,
-                layer TEXT NOT NULL,
-                accessed_at TEXT NOT NULL,
-                accessed_by TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_memory_access_log_mem_id ON memory_access_log (memory_id);
-            CREATE INDEX IF NOT EXISTS idx_memory_access_log_layer ON memory_access_log (layer);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE episodic_logs ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_episodic_logs_scope ON episodic_logs (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE reflection_memory ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_reflection_memory_scope ON reflection_memory (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE tool_performance ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_performance_scope ON tool_performance (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE memory_access_log ADD COLUMN accessed_by TEXT NOT NULL DEFAULT 'unknown'", []);
 
         *self.conn.lock() = conn;
         Ok(())

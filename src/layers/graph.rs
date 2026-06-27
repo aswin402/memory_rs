@@ -48,47 +48,9 @@ impl GraphMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS graph_nodes (
-                name TEXT,
-                entity_type TEXT NOT NULL,
-                observations TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (name, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS graph_edges (
-                from_name TEXT NOT NULL,
-                to_name TEXT NOT NULL,
-                relation_type TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-                valid_until TEXT,
-                superseded_by TEXT,
-                confidence REAL NOT NULL DEFAULT 1.0,
-                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id, valid_from)
-            );
-            CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_until TEXT", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN superseded_by TEXT", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
+        crate::db::run_migrations(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -417,47 +379,8 @@ impl GraphMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS graph_nodes (
-                name TEXT,
-                entity_type TEXT NOT NULL,
-                observations TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (name, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS graph_edges (
-                from_name TEXT NOT NULL,
-                to_name TEXT NOT NULL,
-                relation_type TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-                valid_until TEXT,
-                superseded_by TEXT,
-                confidence REAL NOT NULL DEFAULT 1.0,
-                PRIMARY KEY (from_name, to_name, relation_type, user_id, session_id, agent_id, valid_from)
-            );
-            CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_nodes ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_scope ON graph_nodes (user_id, session_id, agent_id)", []);
-
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_from TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN valid_until TEXT", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN superseded_by TEXT", []);
-        let _ = conn.execute("ALTER TABLE graph_edges ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edges_scope ON graph_edges (user_id, session_id, agent_id)", []);
 
         *self.conn.lock() = conn;
         Ok(())

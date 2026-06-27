@@ -55,47 +55,9 @@ impl CodebaseMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS code_elements (
-                element_id TEXT PRIMARY KEY,
-                file_path TEXT NOT NULL,
-                element_type TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                ast_json TEXT,
-                parent_id TEXT,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id);
-            CREATE TABLE IF NOT EXISTS code_calls (
-                caller_id TEXT NOT NULL,
-                callee_id TEXT NOT NULL,
-                call_site TEXT,
-                PRIMARY KEY (caller_id, callee_id)
-            );
-            CREATE TABLE IF NOT EXISTS repository_evolution (
-                file_path TEXT NOT NULL,
-                version TEXT NOT NULL,
-                commit_hash TEXT,
-                author TEXT,
-                change_type TEXT NOT NULL,
-                summary_of_changes TEXT NOT NULL,
-                bug_introduced INTEGER NOT NULL DEFAULT 0,
-                bug_fixed INTEGER NOT NULL DEFAULT 0,
-                timestamp TEXT NOT NULL,
-                PRIMARY KEY (file_path, version)
-            );",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id)", []);
+        crate::db::run_migrations(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -290,29 +252,8 @@ impl CodebaseMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS code_elements (
-                element_id TEXT PRIMARY KEY,
-                file_path TEXT NOT NULL,
-                element_type TEXT NOT NULL,
-                name TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                ast_json TEXT,
-                parent_id TEXT,
-                start_line INTEGER NOT NULL,
-                end_line INTEGER NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*'
-            );
-            CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE code_elements ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_code_elements_scope ON code_elements (user_id, session_id, agent_id)", []);
 
         *self.conn.lock() = conn;
         Ok(())

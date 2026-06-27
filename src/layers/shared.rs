@@ -23,27 +23,9 @@ impl SharedMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS shared_agent_memory (
-                memory_key TEXT,
-                memory_value TEXT NOT NULL,
-                source_agent TEXT NOT NULL,
-                target_agents TEXT NOT NULL, -- JSON array of target agent IDs
-                importance REAL NOT NULL DEFAULT 1.0,
-                timestamp TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (memory_key, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_shared_agent_memory_scope ON shared_agent_memory (user_id, session_id, agent_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_shared_agent_memory_scope ON shared_agent_memory (user_id, session_id, agent_id)", []);
+        crate::db::run_migrations(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -135,27 +117,8 @@ impl SharedMemory {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            CREATE TABLE IF NOT EXISTS shared_agent_memory (
-                memory_key TEXT,
-                memory_value TEXT NOT NULL,
-                source_agent TEXT NOT NULL,
-                target_agents TEXT NOT NULL, -- JSON array of target agent IDs
-                importance REAL NOT NULL DEFAULT 1.0,
-                timestamp TEXT NOT NULL,
-                user_id TEXT NOT NULL DEFAULT '*',
-                session_id TEXT NOT NULL DEFAULT '*',
-                agent_id TEXT NOT NULL DEFAULT '*',
-                PRIMARY KEY (memory_key, user_id, session_id, agent_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_shared_agent_memory_scope ON shared_agent_memory (user_id, session_id, agent_id);",
+            PRAGMA synchronous=NORMAL;",
         )?;
-
-        // Ensure scope columns exist in older database schemas
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN user_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN session_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("ALTER TABLE shared_agent_memory ADD COLUMN agent_id TEXT NOT NULL DEFAULT '*'", []);
-        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_shared_agent_memory_scope ON shared_agent_memory (user_id, session_id, agent_id)", []);
 
         *self.conn.lock() = conn;
         Ok(())
