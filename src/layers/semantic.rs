@@ -325,20 +325,30 @@ impl SemanticMemory {
 
         let dimensions = 384;
         let hnsw_index = {
-            let mut stmt =
-                conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1")?;
-            let mut rows = stmt.query([])?;
-            if let Some(row) = rows.next()? {
-                let blob: Vec<u8> = row.get(0)?;
-                match World::new_from_dump(&blob) {
-                    Ok(world) => world,
-                    Err(e) => {
-                        log::warn!("Failed to load HNSW index from db: {}. Rebuilding...", e);
+            // Gracefully handle databases without the HNSW index table
+            // (e.g., :memory: databases used during branch commit/rollback)
+            match conn.prepare("SELECT index_data FROM semantic_hnsw_index WHERE id = 1") {
+                Ok(mut stmt) => {
+                    let mut rows = stmt.query([])?;
+                    if let Some(row) = rows.next()? {
+                        let blob: Vec<u8> = row.get(0)?;
+                        match World::new_from_dump(&blob) {
+                            Ok(world) => world,
+                            Err(e) => {
+                                log::warn!("Failed to load HNSW index from db: {}. Rebuilding...", e);
+                                rebuild_hnsw_index(&conn, dimensions)?
+                            }
+                        }
+                    } else {
                         rebuild_hnsw_index(&conn, dimensions)?
                     }
                 }
-            } else {
-                rebuild_hnsw_index(&conn, dimensions)?
+                Err(_) => {
+                    // Table doesn't exist — create a default empty HNSW world
+                    log::debug!("semantic_hnsw_index table not found, creating empty index");
+                    World::new(32, 200, 100, DistanceMetric::Cosine(CosineDistance))
+                        .map_err(|e| MemoryError::Hnsw(e.to_string()))?
+                }
             }
         };
 
